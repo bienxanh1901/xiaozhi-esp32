@@ -142,6 +142,7 @@ def generate_header(lang_code, output_path):
             sound_lang = 'en_us'
             
         sounds.append(f'''
+#define HAS_OGG_{base_name.upper()} 1
         extern const char ogg_{base_name}_start[] asm("_binary_{base_name}_ogg_start");
         extern const char ogg_{base_name}_end[] asm("_binary_{base_name}_ogg_end");
         static const std::string_view OGG_{base_name.upper()} {{
@@ -153,6 +154,7 @@ def generate_header(lang_code, output_path):
     for file in sorted(common_sounds):
         base_name = os.path.splitext(file)[0]
         sounds.append(f'''
+#define HAS_OGG_{base_name.upper()} 1
         extern const char ogg_{base_name}_start[] asm("_binary_{base_name}_ogg_start");
         extern const char ogg_{base_name}_end[] asm("_binary_{base_name}_ogg_end");
         static const std::string_view OGG_{base_name.upper()} {{

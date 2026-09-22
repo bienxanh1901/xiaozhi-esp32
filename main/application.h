@@ -118,6 +118,17 @@ public:
     AecMode GetAecMode() const { return aec_mode_; }
     void PlaySound(const std::string_view& sound);
     AudioService& GetAudioService() { return audio_service_; }
+
+    /**
+     * Stream a music track from an Ogg/Opus URL.
+     *
+     * Safe to call while the assistant is still speaking: the current reply is
+     * aborted and playback starts as soon as the device returns to idle.
+     * `title` is shown on screen while the track plays.
+     */
+    bool PlayMusic(const std::string& url, const std::string& title = "");
+    void StopMusic();
+    bool IsMusicPlaying() const;
     
     /**
      * Reset protocol resources (thread-safe)
@@ -151,6 +162,9 @@ private:
     bool assets_version_checked_ = false;
     bool play_popup_on_listening_ = false;  // Flag to play popup sound after state changes to listening
     bool pending_listening_start_ = false;  // Waiting for playback to drain before starting listening (auto mode)
+    std::string pending_music_url_;    // Music requested while the device was busy
+    std::string pending_music_title_;  // Title shown for the pending track
+    int64_t pending_music_deadline_us_ = 0;  // A queued song expires if it cannot start
     int clock_ticks_ = 0;
     TaskHandle_t activation_task_handle_ = nullptr;
 
@@ -168,9 +182,12 @@ private:
     void BeginWakeWordInvoke(const std::string& wake_word);
     void ContinueWakeWordInvoke(const std::string& wake_word);
     void StartListeningAudio();
+    void PlayListeningPrompt();
     void ConfigureWakeWordForListening();
     void StartNotification(std::string audio_url, std::vector<NotifySubtitle> subtitles);
     void StopNotification();
+    void StartPendingMusic();
+    void DrainToIdleForMusic();
     void HandleNotificationFinished(uint32_t playback_id, bool success);
 
     // Activation task (runs in background)

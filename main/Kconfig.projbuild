@@ -6,6 +6,15 @@ config OTA_URL
     help
         The application will access this URL to check for new firmwares and server address.
 
+config MUSIC_LIBRARY_URL
+    string "Music library URL"
+    default ""
+    help
+        Base URL of the folder holding this device's song files, for example
+        http://192.168.1.50:8000 or https://music.example.com. Leave empty to
+        configure it at runtime instead. A value stored in NVS (set with the
+        self.music.set_library tool) always overrides this.
+
 choice
     prompt "Flash Assets"
     default FLASH_DEFAULT_ASSETS if !USE_EMOTE_MESSAGE_STYLE

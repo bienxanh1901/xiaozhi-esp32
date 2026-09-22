@@ -17,6 +17,7 @@
 #include "lvgl_image.h"
 #include "lvgl_theme.h"
 #include "settings.h"
+#include "music/music_library.h"
 
 #define TAG "MCP"
 
@@ -57,6 +58,85 @@ void McpServer::AddCommonTools() {
                 codec->SetOutputVolume(properties["volume"].value<int>());
                 return true;
             });
+
+    AddTool("self.music.list",
+            "List the Vietnamese children's songs this device can play.\n"
+            "Use this tool before playing music when you are unsure which songs exist, or when "
+            "the user asks what you can sing or play.\n"
+            "Return:\n"
+            "  A JSON object with `library_configured` and a `songs` array; each song has a "
+            "`title` and whether it is `playable`.",
+            PropertyList(), [](const PropertyList& properties) -> ReturnValue {
+                return music::ListJson();
+            });
+
+    AddTool("self.music.play",
+            "Play a Vietnamese children's song on this device.\n"
+            "Use this tool whenever the user asks to hear a song, some music, or a lullaby.\n"
+            "Args:\n"
+            "  `song`: The song title in Vietnamese, with or without accents (e.g. `Chú ếch con` "
+            "or `chu ech con`). Leave empty if you pass a `url` instead.\n"
+            "  `url`: Optional direct link to an Ogg/Opus audio file. Only use it when the user "
+            "supplies a link; MP3 is not supported.\n"
+            "Return:\n"
+            "  True when playback starts. An error message explains why it could not.",
+            PropertyList({Property("song", kPropertyTypeString, std::string("")),
+                          Property("url", kPropertyTypeString, std::string(""))}),
+            [](const PropertyList& properties) -> ToolResult {
+                auto song = properties["song"].value<std::string>();
+                auto url = properties["url"].value<std::string>();
+                std::string title;
+
+                if (url.empty()) {
+                    if (song.empty()) {
+                        return std::unexpected<std::string>("Provide a song title or a url.");
+                    }
+                    auto* track = music::Find(song);
+                    if (track == nullptr) {
+                        return std::unexpected<std::string>(
+                            "That song is not in the library. Call self.music.list to see the "
+                            "available songs.");
+                    }
+                    title = track->title;
+                    url = music::ResolveUrl(*track);
+                    if (url.empty()) {
+                        return std::unexpected<std::string>(
+                            "The music library is not configured yet. Ask the owner to set it up "
+                            "with the self.music.set_library tool.");
+                    }
+                }
+
+                if (!Application::GetInstance().PlayMusic(url, title)) {
+                    return std::unexpected<std::string>("Could not start playback.");
+                }
+                return true;
+            });
+
+    AddTool("self.music.stop", "Stop the song that is currently playing.", PropertyList(),
+            [](const PropertyList& properties) -> ReturnValue {
+                Application::GetInstance().StopMusic();
+                return true;
+            });
+
+    AddTool("self.music.set_library",
+            "Set the base URL of the folder that holds this device's song files. This is a setup "
+            "step performed by the device owner, not something to call during normal chat.\n"
+            "Args:\n"
+            "  `url`: Base URL of a folder of Ogg/Opus files, e.g. "
+            "`https://example.com/nhac-thieu-nhi`.",
+            PropertyList({Property("url", kPropertyTypeString)}),
+            [](const PropertyList& properties) -> ReturnValue {
+                music::SetBaseUrl(properties["url"].value<std::string>());
+                return true;
+            });
+
+    {
+        // Surface the resolved library at boot: a wrong address otherwise only
+        // shows up as a failed connection when someone asks for a song.
+        auto library = music::GetBaseUrl();
+        ESP_LOGI(TAG, "Music library: %s",
+                 library.empty() ? "(not configured)" : library.c_str());
+    }
 
     auto backlight = board.GetBacklight();
     if (backlight) {
