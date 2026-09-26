@@ -112,7 +112,51 @@ void McpServer::AddCommonTools() {
                 return true;
             });
 
-    AddTool("self.music.stop", "Stop the song that is currently playing.", PropertyList(),
+    AddTool("self.story.list",
+            "Search the fairy tales this device can tell. The library holds several hundred, "
+            "so pass a word from the title rather than listing everything.\n"
+            "Args:\n"
+            "  `search`: Part of a title, accents optional (e.g. `cong chua`, `tho`). Empty "
+            "returns the first stories.\n"
+            "Return:\n"
+            "  JSON with `total`, `matched`, `truncated` and up to 30 `stories` titles.",
+            PropertyList({Property("search", kPropertyTypeString, std::string(""))}),
+            [](const PropertyList& properties) -> ReturnValue {
+                return story::ListJson(properties["search"].value<std::string>());
+            });
+
+    AddTool("self.story.play",
+            "Play a recorded fairy tale on this device, for example at bedtime.\n"
+            "Use this tool whenever the user asks you to tell or read a story (kể chuyện, đọc "
+            "truyện cổ tích) and the story is in the library. If it is not, tell the story in "
+            "your own words instead.\n"
+            "Args:\n"
+            "  `story`: The story title in Vietnamese or English, with or without accents "
+            "(e.g. `Tấm Cám`, `tam cam`, `The Three Little Pigs`).\n"
+            "Return:\n"
+            "  True when playback starts. An error message explains why it could not.",
+            PropertyList({Property("story", kPropertyTypeString)}),
+            [](const PropertyList& properties) -> ToolResult {
+                auto query = properties["story"].value<std::string>();
+                auto* item = story::Find(query);
+                if (item == nullptr) {
+                    return std::unexpected<std::string>(
+                        "That story is not in the library. Call self.story.list, or tell the "
+                        "story in your own words.");
+                }
+                auto url = story::ResolveUrl(*item);
+                if (url.empty()) {
+                    return std::unexpected<std::string>(
+                        "The story library is not configured yet.");
+                }
+                if (!Application::GetInstance().PlayMusic(url, item->title)) {
+                    return std::unexpected<std::string>("Could not start playback.");
+                }
+                return true;
+            });
+
+    AddTool("self.music.stop", "Stop the song or story that is currently playing.",
+            PropertyList(),
             [](const PropertyList& properties) -> ReturnValue {
                 Application::GetInstance().StopMusic();
                 return true;

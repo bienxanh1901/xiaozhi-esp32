@@ -56,4 +56,17 @@ std::string ListJson();
 
 }  // namespace music
 
+// Fairy tales. Same record shape and matching rules as songs, but a separate
+// catalogue served from <base_url>/stories/, so a story request can never
+// resolve to a song or the other way round.
+namespace story {
+
+size_t Count();
+const MusicTrack* Find(const std::string& query);
+std::string ResolveUrl(const MusicTrack& track);
+// Up to 30 titles, filtered by an optional accent-insensitive search term.
+std::string ListJson(const std::string& search = "");
+
+}  // namespace story
+
 #endif  // MUSIC_LIBRARY_H_
