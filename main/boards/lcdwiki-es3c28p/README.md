@@ -32,6 +32,12 @@ does not. Touch is detected at startup and skipped when absent.
 | Battery ADC | 9 |
 | BOOT button | 0 |
 
+## Display
+
+The screen shows animated robot eyes (`main/display/eye_display.h`, shared
+with the bread-compact boards) that react to the emotion of each reply, with
+the usual status bar and chat text underneath.
+
 ## Controls
 
 - BOOT button: start or stop a conversation. Press during startup to enter
