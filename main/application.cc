@@ -779,10 +779,18 @@ void Application::StopListening() { xEventGroupSetBits(event_group_, MAIN_EVENT_
 
 void Application::HandleToggleChatEvent() {
     auto state = GetDeviceState();
+    ESP_LOGI(TAG, "Toggle chat: state=%d, music_playing=%d", state, notify_player_.IsActive());
+
+    // A queued song is cancelled by the button too, or it would start playing
+    // moments after the user asked for silence.
+    pending_music_url_.clear();
+    pending_music_title_.clear();
 
     if (state == kDeviceStateNotifying) {
+        // Pressing the button during playback means "stop", not "stop and then
+        // start talking to me". End the track and return to idle.
         StopNotification();
-        state = kDeviceStateIdle;
+        return;
     }
 
     if (state == kDeviceStateActivating) {
@@ -805,6 +813,11 @@ void Application::HandleToggleChatEvent() {
 
     if (state == kDeviceStateIdle) {
         ListeningMode mode = GetDefaultListeningMode();
+        // Cue the button path too, so the user knows it is their turn. Upstream
+        // only does this for the wake word. If speech recognition ever starts
+        // dropping the first utterance, this single line is the thing to remove:
+        // without echo cancellation the microphone can hear the tone itself.
+        play_popup_on_listening_ = true;
         if (!protocol_->IsAudioChannelOpened()) {
             SetDeviceState(kDeviceStateConnecting);
             // Schedule to let the state change be processed first (UI update)
@@ -917,7 +930,7 @@ void Application::HandleWakeWordDetectedEvent() {
         if (state == kDeviceStateListening) {
             protocol_->SendStartListening(GetDefaultListeningMode());
             audio_service_.ResetDecoder();
-            audio_service_.PlaySound(Lang::Sounds::OGG_POPUP);
+            PlayListeningPrompt();
             // Re-enable wake word detection as it was stopped by the detection itself
             audio_service_.EnableWakeWordDetection(true);
         } else {
@@ -1018,6 +1031,9 @@ void Application::HandleStateChangedEvent() {
             }
             audio_service_.EnableVoiceProcessing(false);
             audio_service_.EnableWakeWordDetection(true);
+            if (!pending_music_url_.empty()) {
+                StartPendingMusic();
+            }
             break;
         case kDeviceStateConnecting:
             display->SetStatus(Lang::Strings::CONNECTING);
@@ -1081,11 +1097,23 @@ void Application::StartListeningAudio() {
 
     ConfigureWakeWordForListening();
 
-    // Play popup sound after ResetDecoder (in EnableVoiceProcessing) has been called
+    // Play the cue after ResetDecoder (in EnableVoiceProcessing) has been called
     if (play_popup_on_listening_) {
         play_popup_on_listening_ = false;
-        audio_service_.PlaySound(Lang::Sounds::OGG_POPUP);
+        PlayListeningPrompt();
     }
+}
+
+void Application::PlayListeningPrompt() {
+    // A spoken cue tells the user they can start talking, which a plain tone
+    // does not - it matters most for children, who may not know what the beep
+    // means. Bundle listening.ogg in the locale to enable it; without that
+    // asset we fall back to the tone, so behaviour is unchanged.
+#ifdef HAS_OGG_LISTENING
+    audio_service_.PlaySound(Lang::Sounds::OGG_LISTENING);
+#else
+    audio_service_.PlaySound(Lang::Sounds::OGG_POPUP);
+#endif
 }
 
 void Application::ConfigureWakeWordForListening() {
@@ -1096,6 +1124,90 @@ void Application::ConfigureWakeWordForListening() {
     // Disable wake word detection in listening mode
     audio_service_.EnableWakeWordDetection(false);
 #endif
+}
+
+bool Application::PlayMusic(const std::string& url, const std::string& title) {
+    if (url.empty()) {
+        ESP_LOGW(TAG, "PlayMusic called with an empty URL");
+        return false;
+    }
+    Schedule([this, url, title]() {
+        pending_music_url_ = url;
+        pending_music_title_ = title;
+        pending_music_deadline_us_ = esp_timer_get_time() + 30 * 1000 * 1000;
+
+        auto state = GetDeviceState();
+        if (state == kDeviceStateIdle) {
+            StartPendingMusic();
+            return;
+        }
+        // The assistant is usually mid-reply when it asks for a song. Wind the
+        // current turn down; StartPendingMusic() runs once we reach idle.
+        ESP_LOGI(TAG, "Music queued, waiting for device to become idle (state %d)", state);
+        DrainToIdleForMusic();
+    });
+    return true;
+}
+
+void Application::DrainToIdleForMusic() {
+    // A song can only start from idle, and this is the only thing that gets us
+    // there. Aborting a reply merely drops the device into listening, so we
+    // also close the audio channel: OnAudioChannelClosed() sets idle, and the
+    // idle handler starts the queued track.
+    //
+    // This runs only when a song was explicitly requested, and deliberately
+    // touches nothing in the normal listening path.
+    auto state = GetDeviceState();
+    if (state == kDeviceStateIdle) {
+        return;
+    }
+    if (state == kDeviceStateSpeaking) {
+        AbortSpeaking(kAbortReasonNone);
+    }
+    if (protocol_ && protocol_->IsAudioChannelOpened()) {
+        protocol_->CloseAudioChannel();
+    }
+}
+
+void Application::StopMusic() {
+    Schedule([this]() {
+        pending_music_url_.clear();
+        pending_music_title_.clear();
+        if (GetDeviceState() == kDeviceStateNotifying) {
+            StopNotification();
+        }
+    });
+}
+
+bool Application::IsMusicPlaying() const {
+    return notify_player_.IsActive();
+}
+
+void Application::StartPendingMusic() {
+    if (pending_music_url_.empty()) {
+        return;
+    }
+    // Drop a request the user has long since given up on, rather than starting
+    // a song minutes later out of nowhere.
+    if (esp_timer_get_time() > pending_music_deadline_us_) {
+        ESP_LOGW(TAG, "Discarding stale music request");
+        pending_music_url_.clear();
+        pending_music_title_.clear();
+        return;
+    }
+    // Clear first: StartNotification() can fail straight back into idle, and a
+    // still-pending request would restart it forever.
+    std::string url = std::move(pending_music_url_);
+    std::string title = std::move(pending_music_title_);
+    pending_music_url_.clear();
+    pending_music_title_.clear();
+
+    std::vector<NotifySubtitle> subtitles;
+    if (!title.empty()) {
+        subtitles.push_back(NotifySubtitle{0, title});
+    }
+    ESP_LOGI(TAG, "Playing music: %s", title.empty() ? url.c_str() : title.c_str());
+    StartNotification(std::move(url), std::move(subtitles));
 }
 
 void Application::StartNotification(std::string audio_url, std::vector<NotifySubtitle> subtitles) {
@@ -1145,6 +1257,7 @@ void Application::StartNotification(std::string audio_url, std::vector<NotifySub
 }
 
 void Application::StopNotification() {
+    ESP_LOGI(TAG, "StopNotification");
     notify_player_.Stop();
     audio_service_.ResetDecoder();
     auto& board = Board::GetInstance();
