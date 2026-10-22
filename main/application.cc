@@ -580,9 +580,17 @@ void Application::InitializeProtocol() {
         }
     });
 
-    protocol_->OnAudioChannelClosed([this, &board]() {
-        board.SetPowerSaveLevel(PowerSaveLevel::LOW_POWER);
+    protocol_->OnAudioChannelClosed([this]() {
         Schedule([this]() {
+            // PlayMusic() closes the channel to make room for a song, and the
+            // close lands after playback has started. Playback owns the state
+            // and power level until it ends; forcing idle here would leave the
+            // song running in the idle state, where BOOT starts a chat instead
+            // of stopping it.
+            if (GetDeviceState() == kDeviceStateNotifying) {
+                return;
+            }
+            Board::GetInstance().SetPowerSaveLevel(PowerSaveLevel::LOW_POWER);
             auto display = Board::GetInstance().GetDisplay();
             display->SetChatMessage("system", "");
             SetDeviceState(kDeviceStateIdle);
