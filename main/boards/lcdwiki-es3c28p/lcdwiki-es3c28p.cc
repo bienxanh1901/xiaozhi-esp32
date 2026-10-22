@@ -26,6 +26,8 @@
 #include "material_symbols.h"
 
 LV_FONT_DECLARE(font_material_symbols_30_4);
+LV_FONT_DECLARE(BUILTIN_ICON_FONT);
+LV_FONT_DECLARE(BUILTIN_TEXT_FONT);
 
 #define TAG "LcdwikiEs3c28p"
 
@@ -72,7 +74,79 @@ private:
     TouchDriver touch_;
     AdcBatteryMonitor* adc_battery_monitor_;
     lv_obj_t* talk_button_ = nullptr;
+    lv_obj_t* talk_icon_ = nullptr;
     DeviceState talk_button_state_ = kDeviceStateUnknown;
+    lv_obj_t* battery_icon_ = nullptr;
+    lv_obj_t* battery_text_ = nullptr;
+    esp_timer_handle_t battery_timer_ = nullptr;
+
+    // The status bar's battery icon sits under the full-screen eye face, so
+    // show the level in the top-right corner, above the face.
+    void InitializeBatteryIndicator() {
+        {
+            DisplayLockGuard lock(display_);
+            lv_obj_t* box = lv_obj_create(lv_layer_top());
+            lv_obj_remove_flag(box, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_remove_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+            lv_obj_set_size(box, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+            lv_obj_set_style_bg_opa(box, LV_OPA_TRANSP, 0);
+            lv_obj_set_style_border_width(box, 0, 0);
+            lv_obj_set_style_pad_all(box, 0, 0);
+            lv_obj_set_style_pad_column(box, 4, 0);
+            lv_obj_set_flex_flow(box, LV_FLEX_FLOW_ROW);
+            lv_obj_set_flex_align(box, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+            lv_obj_align(box, LV_ALIGN_TOP_RIGHT, -8, 6);
+
+            battery_text_ = lv_label_create(box);
+            lv_obj_set_style_text_font(battery_text_, &BUILTIN_TEXT_FONT, 0);
+            lv_label_set_text(battery_text_, "");
+            battery_icon_ = lv_label_create(box);
+            lv_obj_set_style_text_font(battery_icon_, &BUILTIN_ICON_FONT, 0);
+            lv_label_set_text(battery_icon_, "");
+        }
+
+        esp_timer_create_args_t args = {};
+        args.callback = [](void* arg) { static_cast<LcdwikiEs3c28pBoard*>(arg)->UpdateBatteryIndicator(); };
+        args.arg = this;
+        args.name = "battery_ui";
+        ESP_ERROR_CHECK(esp_timer_create(&args, &battery_timer_));
+        // The first estimate needs a few ADC samples; refresh every 10 s.
+        ESP_ERROR_CHECK(esp_timer_start_periodic(battery_timer_, 10 * 1000 * 1000));
+    }
+
+    void UpdateBatteryIndicator() {
+        int level;
+        bool charging, discharging;
+        if (!GetBatteryLevel(level, charging, discharging)) return;
+        if (level < 0) level = 0;
+        if (level > 100) level = 100;
+
+        static const char* const kLevels[] = {
+            MATERIAL_SYMBOLS_BATTERY_ANDROID_0,       MATERIAL_SYMBOLS_BATTERY_ANDROID_FRAME_1,
+            MATERIAL_SYMBOLS_BATTERY_ANDROID_FRAME_2, MATERIAL_SYMBOLS_BATTERY_ANDROID_FRAME_3,
+            MATERIAL_SYMBOLS_BATTERY_ANDROID_FRAME_4, MATERIAL_SYMBOLS_BATTERY_ANDROID_FRAME_5,
+            MATERIAL_SYMBOLS_BATTERY_ANDROID_FRAME_6, MATERIAL_SYMBOLS_BATTERY_ANDROID_FRAME_FULL,
+        };
+        const char* icon;
+        lv_color_t color;
+        if (charging) {
+            icon = MATERIAL_SYMBOLS_BATTERY_ANDROID_FRAME_BOLT;
+            color = lv_color_hex(0x66BB6A);
+        } else {
+            // Same buckets as the standard status bar.
+            int index = level <= 0 ? 0 : (level >= 100 ? 7 : 1 + ((level - 1) * 6 / 99));
+            icon = kLevels[index];
+            color = level <= 15 ? lv_color_hex(0xEF5350) : lv_color_white();
+        }
+
+        char text[8];
+        snprintf(text, sizeof(text), "%d%%", level);
+        DisplayLockGuard lock(display_);
+        lv_label_set_text(battery_icon_, icon);
+        lv_label_set_text(battery_text_, text);
+        lv_obj_set_style_text_color(battery_icon_, color, 0);
+        lv_obj_set_style_text_color(battery_text_, color, 0);
+    }
 
     // The touch panel reports portrait coordinates; the screen runs landscape.
     static void TouchToScreen(uint16_t raw_x, uint16_t raw_y, int &sx, int &sy) {
@@ -104,30 +178,37 @@ private:
         lv_obj_set_style_pad_all(talk_button_, 0, 0);
         lv_obj_align(talk_button_, LV_ALIGN_BOTTOM_RIGHT, -TALK_BUTTON_MARGIN, -TALK_BUTTON_MARGIN);
 
-        lv_obj_t* icon = lv_label_create(talk_button_);
-        lv_obj_set_style_text_font(icon, &font_material_symbols_30_4, 0);
-        lv_obj_set_style_text_color(icon, lv_color_white(), 0);
-        lv_label_set_text(icon, MATERIAL_SYMBOLS_MIC);
-        lv_obj_center(icon);
+        talk_icon_ = lv_label_create(talk_button_);
+        lv_obj_set_style_text_font(talk_icon_, &font_material_symbols_30_4, 0);
+        lv_obj_set_style_text_color(talk_icon_, lv_color_white(), 0);
+        lv_label_set_text(talk_icon_, MATERIAL_SYMBOLS_MIC);
+        lv_obj_center(talk_icon_);
         UpdateTalkButton(kDeviceStateIdle);
     }
 
-    // Colour shows what a tap will do: blue to talk, green while listening,
-    // orange while the bot speaks (a tap interrupts it), grey when busy.
+    // The button shows what a tap will do: blue mic to talk, green while
+    // listening, orange while the bot speaks (a tap interrupts it), grey when
+    // busy. While a song or story plays it becomes a red stop button; the tap
+    // takes the same path as BOOT, which ends playback and returns to idle.
     void UpdateTalkButton(DeviceState state) {
         if (talk_button_ == nullptr || state == talk_button_state_) return;
         talk_button_state_ = state;
         uint32_t color;
+        const char* icon = MATERIAL_SYMBOLS_MIC;
         switch (state) {
             case kDeviceStateListening: color = 0x2E7D32; break;
-            case kDeviceStateSpeaking:
-            case kDeviceStateNotifying: color = 0xEF6C00; break;
+            case kDeviceStateSpeaking: color = 0xEF6C00; break;
+            case kDeviceStateNotifying:
+                color = 0xC62828;
+                icon = MATERIAL_SYMBOLS_STOP;
+                break;
             case kDeviceStateIdle: color = 0x1565C0; break;
             default: color = 0x546E7A; break;
         }
         DisplayLockGuard lock(display_);
         lv_obj_set_style_bg_color(talk_button_, lv_color_hex(color), 0);
         lv_obj_set_style_bg_opa(talk_button_, LV_OPA_COVER, 0);
+        lv_label_set_text(talk_icon_, icon);
     }
 
     void FlashTalkButton(bool pressed) {
@@ -278,6 +359,7 @@ public:
         InitializeSpi();
         InitializeLcdDisplay();
         InitializeTouch();
+        InitializeBatteryIndicator();
         InitializeButtons();
         InitializeTools();
         GetBacklight()->SetBrightness(100);

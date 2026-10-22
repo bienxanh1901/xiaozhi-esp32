@@ -45,7 +45,17 @@ the usual status bar and chat text underneath.
 - Talk button (ES3C28P): the round mic button in the bottom-right corner
   does the same as BOOT. Blue is ready, green is listening, orange is the
   bot speaking (a tap interrupts), grey is busy. Taps elsewhere are ignored.
+- While a song or story plays the button turns red with a stop icon; tap it
+  (or press BOOT) to stop playback.
 - Hold anywhere on the screen for 3 seconds to enter WiFi configuration.
+
+## Battery
+
+The top-right corner shows the battery icon and percentage, refreshed every
+10 seconds: red at 15% or below, a green bolt while charging. The TP4054
+charge status is not wired to a GPIO, so charging is inferred from the
+voltage trend and can take a minute to show. Without a battery fitted the
+reading follows the charger voltage.
 
 ## Build
 
