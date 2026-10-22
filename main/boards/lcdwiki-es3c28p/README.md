@@ -42,8 +42,10 @@ the usual status bar and chat text underneath.
 
 - BOOT button: start or stop a conversation. Press during startup to enter
   WiFi configuration.
-- Touch (ES3C28P): tap to toggle a conversation, double-tap to start
-  listening, hold for 3 seconds to enter WiFi configuration.
+- Talk button (ES3C28P): the round mic button in the bottom-right corner
+  does the same as BOOT. Blue is ready, green is listening, orange is the
+  bot speaking (a tap interrupts), grey is busy. Taps elsewhere are ignored.
+- Hold anywhere on the screen for 3 seconds to enter WiFi configuration.
 
 ## Build
 

@@ -23,6 +23,9 @@
 #include "led/single_led.h"
 #include "system_reset.h"
 #include "esp_lcd_ili9341.h"
+#include "material_symbols.h"
+
+LV_FONT_DECLARE(font_material_symbols_30_4);
 
 #define TAG "LcdwikiEs3c28p"
 
@@ -68,6 +71,70 @@ private:
     i2c_master_bus_handle_t codec_i2c_bus_;
     TouchDriver touch_;
     AdcBatteryMonitor* adc_battery_monitor_;
+    lv_obj_t* talk_button_ = nullptr;
+    DeviceState talk_button_state_ = kDeviceStateUnknown;
+
+    // The touch panel reports portrait coordinates; the screen runs landscape.
+    static void TouchToScreen(uint16_t raw_x, uint16_t raw_y, int &sx, int &sy) {
+        sx = TOUCH_SWAP_XY ? raw_y : raw_x;
+        sy = TOUCH_SWAP_XY ? raw_x : raw_y;
+        if (TOUCH_MIRROR_X) sx = DISPLAY_WIDTH - 1 - sx;
+        if (TOUCH_MIRROR_Y) sy = DISPLAY_HEIGHT - 1 - sy;
+    }
+
+    // Generous hit area: fingertips are bigger than the drawn button.
+    static bool InTalkButton(int sx, int sy) {
+        const int left = DISPLAY_WIDTH - TALK_BUTTON_MARGIN - TALK_BUTTON_SIZE - TALK_BUTTON_SLOP;
+        const int top = DISPLAY_HEIGHT - TALK_BUTTON_MARGIN - TALK_BUTTON_SIZE - TALK_BUTTON_SLOP;
+        return sx >= left && sy >= top;
+    }
+
+    // An on-screen talk button, drawn above the eye face. Touch is polled by
+    // TouchTask, so the button is a visual only and hit-testing happens there.
+    void InitializeTalkButton() {
+        DisplayLockGuard lock(display_);
+        talk_button_ = lv_obj_create(lv_layer_top());
+        lv_obj_remove_flag(talk_button_, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_remove_flag(talk_button_, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_size(talk_button_, TALK_BUTTON_SIZE, TALK_BUTTON_SIZE);
+        lv_obj_set_style_radius(talk_button_, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_border_width(talk_button_, 2, 0);
+        lv_obj_set_style_border_color(talk_button_, lv_color_white(), 0);
+        lv_obj_set_style_border_opa(talk_button_, LV_OPA_50, 0);
+        lv_obj_set_style_pad_all(talk_button_, 0, 0);
+        lv_obj_align(talk_button_, LV_ALIGN_BOTTOM_RIGHT, -TALK_BUTTON_MARGIN, -TALK_BUTTON_MARGIN);
+
+        lv_obj_t* icon = lv_label_create(talk_button_);
+        lv_obj_set_style_text_font(icon, &font_material_symbols_30_4, 0);
+        lv_obj_set_style_text_color(icon, lv_color_white(), 0);
+        lv_label_set_text(icon, MATERIAL_SYMBOLS_MIC);
+        lv_obj_center(icon);
+        UpdateTalkButton(kDeviceStateIdle);
+    }
+
+    // Colour shows what a tap will do: blue to talk, green while listening,
+    // orange while the bot speaks (a tap interrupts it), grey when busy.
+    void UpdateTalkButton(DeviceState state) {
+        if (talk_button_ == nullptr || state == talk_button_state_) return;
+        talk_button_state_ = state;
+        uint32_t color;
+        switch (state) {
+            case kDeviceStateListening: color = 0x2E7D32; break;
+            case kDeviceStateSpeaking:
+            case kDeviceStateNotifying: color = 0xEF6C00; break;
+            case kDeviceStateIdle: color = 0x1565C0; break;
+            default: color = 0x546E7A; break;
+        }
+        DisplayLockGuard lock(display_);
+        lv_obj_set_style_bg_color(talk_button_, lv_color_hex(color), 0);
+        lv_obj_set_style_bg_opa(talk_button_, LV_OPA_COVER, 0);
+    }
+
+    void FlashTalkButton(bool pressed) {
+        if (talk_button_ == nullptr) return;
+        DisplayLockGuard lock(display_);
+        lv_obj_set_style_transform_scale(talk_button_, pressed ? 230 : 256, 0);
+    }
 
     void InitializeBatteryMonitor() {
         adc_battery_monitor_ = new AdcBatteryMonitor(ADC_UNIT_1, ADC_CHANNEL_8, 200000, 200000, GPIO_NUM_NC);
@@ -77,9 +144,9 @@ private:
         auto *self = static_cast<LcdwikiEs3c28pBoard*>(arg);
         auto &app = Application::GetInstance();
 
-        uint32_t last_tap = 0;
         uint32_t down_start = 0;
         bool down = false;
+        bool on_button = false;
 
         while (true) {
             bool t;
@@ -88,34 +155,31 @@ private:
 
             uint32_t now = esp_timer_get_time() / 1000;
 
-            if (t) {
-                if (!down) {
-                    down = true;
-                    down_start = now;
-                }
+            if (t && !down) {
+                down = true;
+                down_start = now;
+                int sx, sy;
+                TouchToScreen(x, y, sx, sy);
+                on_button = InTalkButton(sx, sy);
+                ESP_LOGI(TAG, "Touch raw=(%u,%u) screen=(%d,%d)%s", x, y, sx, sy,
+                         on_button ? " talk button" : "");
+                if (on_button) self->FlashTalkButton(true);
             }
 
             if (!t && down) {
                 down = false;
+                if (on_button) self->FlashTalkButton(false);
 
-                uint32_t press = now - down_start;
-
-                // long tap
-                if (press > 3000) {
+                // Hold anywhere for 3 s: WiFi configuration.
+                if (now - down_start > 3000) {
                     self->EnterWifiConfigMode();
-                } else {
-                    // double tap
-                    if (now - last_tap < 250) {
-                        app.StartListening();
-                        last_tap = 0;
-                    } else {
-                        // single tap
-                        app.ToggleChatState();
-                        last_tap = now;
-                    }
+                } else if (on_button) {
+                    // Same action as the BOOT button.
+                    app.ToggleChatState();
                 }
             }
 
+            self->UpdateTalkButton(app.GetDeviceState());
             vTaskDelay(pdMS_TO_TICKS(50));
         }
     }
@@ -127,6 +191,7 @@ private:
             return;
         }
         if (!touch_.Init(codec_i2c_bus_, TOUCH_I2C_ADDR)) return;
+        InitializeTalkButton();
         xTaskCreatePinnedToCore(TouchTask, "touch_task", 4096, this, 5, nullptr, 0);
     }
 

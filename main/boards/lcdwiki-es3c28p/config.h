@@ -54,5 +54,14 @@
 #define TOUCH_I2C_ADDR        0x38
 #define TOUCH_RST_PIN         GPIO_NUM_18
 #define TOUCH_INT_PIN         GPIO_NUM_17
+// Map the panel's portrait touch coordinates onto the landscape screen.
+#define TOUCH_SWAP_XY         true
+#define TOUCH_MIRROR_X        false
+#define TOUCH_MIRROR_Y        true
+
+// On-screen talk button, bottom-right corner (pixels)
+#define TALK_BUTTON_SIZE      64
+#define TALK_BUTTON_MARGIN    12
+#define TALK_BUTTON_SLOP      16
 
 #endif  // _BOARD_CONFIG_H_
