@@ -12,6 +12,8 @@
 #include "config.h"
 #include "mcp_server.h"
 #include "adc_battery_monitor.h"
+#include "apps/launcher.h"
+#include "music/local_player.h"
 
 #include <esp_log.h>
 #include <driver/i2c_master.h>
@@ -19,6 +21,9 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <esp_timer.h>
+#include <driver/sdmmc_host.h>
+#include <esp_vfs_fat.h>
+#include <sdmmc_cmd.h>
 
 #include "led/single_led.h"
 #include "system_reset.h"
@@ -75,6 +80,13 @@ private:
     AdcBatteryMonitor* adc_battery_monitor_;
     lv_obj_t* talk_button_ = nullptr;
     lv_obj_t* talk_icon_ = nullptr;
+    lv_indev_t* touch_indev_ = nullptr;
+    bool touch_down_ = false;
+    int64_t touch_down_ms_ = 0;
+    bool sd_mounted_ = false;
+    LocalMusicPlayer* music_player_ = nullptr;
+    Launcher* launcher_ = nullptr;
+    lv_obj_t* boot_cover_ = nullptr;  // Black until the launcher is up
     DeviceState talk_button_state_ = kDeviceStateUnknown;
     lv_obj_t* battery_icon_ = nullptr;
     lv_obj_t* battery_text_ = nullptr;
@@ -156,20 +168,18 @@ private:
         if (TOUCH_MIRROR_Y) sy = DISPLAY_HEIGHT - 1 - sy;
     }
 
-    // Generous hit area: fingertips are bigger than the drawn button.
-    static bool InTalkButton(int sx, int sy) {
-        const int left = DISPLAY_WIDTH - TALK_BUTTON_MARGIN - TALK_BUTTON_SIZE - TALK_BUTTON_SLOP;
-        const int top = DISPLAY_HEIGHT - TALK_BUTTON_MARGIN - TALK_BUTTON_SIZE - TALK_BUTTON_SLOP;
-        return sx >= left && sy >= top;
-    }
-
-    // An on-screen talk button, drawn above the eye face. Touch is polled by
-    // TouchTask, so the button is a visual only and hit-testing happens there.
+    // An on-screen talk button over the eye face, on the top layer. It does
+    // what BOOT does; its look follows the device state (see UpdateTalkButton).
+    // Call with the display lock held.
     void InitializeTalkButton() {
-        DisplayLockGuard lock(display_);
         talk_button_ = lv_obj_create(lv_layer_top());
-        lv_obj_remove_flag(talk_button_, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_remove_flag(talk_button_, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_event_cb(talk_button_, [](lv_event_t*) {
+            Application::GetInstance().ToggleChatState();
+        }, LV_EVENT_CLICKED, nullptr);
+        lv_obj_set_style_transform_pivot_x(talk_button_, TALK_BUTTON_SIZE / 2, 0);
+        lv_obj_set_style_transform_pivot_y(talk_button_, TALK_BUTTON_SIZE / 2, 0);
+        lv_obj_set_style_transform_scale(talk_button_, 230, LV_STATE_PRESSED);
         lv_obj_set_size(talk_button_, TALK_BUTTON_SIZE, TALK_BUTTON_SIZE);
         lv_obj_set_style_radius(talk_button_, LV_RADIUS_CIRCLE, 0);
         lv_obj_set_style_border_width(talk_button_, 2, 0);
@@ -184,6 +194,11 @@ private:
         lv_label_set_text(talk_icon_, MATERIAL_SYMBOLS_MIC);
         lv_obj_center(talk_icon_);
         UpdateTalkButton(kDeviceStateIdle);
+        // Follow the device state from the LVGL task, which holds the lock.
+        lv_timer_create([](lv_timer_t* t) {
+            auto* self = static_cast<LcdwikiEs3c28pBoard*>(lv_timer_get_user_data(t));
+            self->UpdateTalkButton(Application::GetInstance().GetDeviceState());
+        }, 100, this);
     }
 
     // The button shows what a tap will do: blue mic to talk, green while
@@ -205,75 +220,122 @@ private:
             case kDeviceStateIdle: color = 0x1565C0; break;
             default: color = 0x546E7A; break;
         }
-        DisplayLockGuard lock(display_);
         lv_obj_set_style_bg_color(talk_button_, lv_color_hex(color), 0);
         lv_obj_set_style_bg_opa(talk_button_, LV_OPA_COVER, 0);
         lv_label_set_text(talk_icon_, icon);
-    }
-
-    void FlashTalkButton(bool pressed) {
-        if (talk_button_ == nullptr) return;
-        DisplayLockGuard lock(display_);
-        lv_obj_set_style_transform_scale(talk_button_, pressed ? 230 : 256, 0);
     }
 
     void InitializeBatteryMonitor() {
         adc_battery_monitor_ = new AdcBatteryMonitor(ADC_UNIT_1, ADC_CHANNEL_8, 200000, 200000, GPIO_NUM_NC);
     }
 
-    static void TouchTask(void *arg) {
-        auto *self = static_cast<LcdwikiEs3c28pBoard*>(arg);
-        auto &app = Application::GetInstance();
+    // LVGL pointer input from the FT6336G. Runs in the LVGL task.
+    static void TouchRead(lv_indev_t* indev, lv_indev_data_t* data) {
+        auto* self = static_cast<LcdwikiEs3c28pBoard*>(lv_indev_get_user_data(indev));
+        bool touched;
+        uint16_t x, y;
+        if (!self->touch_.Read(touched, x, y)) touched = false;
 
-        uint32_t down_start = 0;
-        bool down = false;
-        bool on_button = false;
-
-        while (true) {
-            bool t;
-            uint16_t x, y;
-            self->touch_.Read(t, x, y);
-
-            uint32_t now = esp_timer_get_time() / 1000;
-
-            if (t && !down) {
-                down = true;
-                down_start = now;
-                int sx, sy;
-                TouchToScreen(x, y, sx, sy);
-                on_button = InTalkButton(sx, sy);
-                ESP_LOGI(TAG, "Touch raw=(%u,%u) screen=(%d,%d)%s", x, y, sx, sy,
-                         on_button ? " talk button" : "");
-                if (on_button) self->FlashTalkButton(true);
+        const int64_t now_ms = esp_timer_get_time() / 1000;
+        if (touched) {
+            int sx, sy;
+            TouchToScreen(x, y, sx, sy);
+            data->point.x = sx;
+            data->point.y = sy;
+            data->state = LV_INDEV_STATE_PRESSED;
+            if (!self->touch_down_) {
+                self->touch_down_ = true;
+                self->touch_down_ms_ = now_ms;
+                ESP_LOGI(TAG, "Touch raw=(%u,%u) screen=(%d,%d)", x, y, sx, sy);
             }
-
-            if (!t && down) {
-                down = false;
-                if (on_button) self->FlashTalkButton(false);
-
-                // Hold anywhere for 3 s: WiFi configuration.
-                if (now - down_start > 3000) {
-                    self->EnterWifiConfigMode();
-                } else if (on_button) {
-                    // Same action as the BOOT button.
-                    app.ToggleChatState();
+        } else {
+            data->state = LV_INDEV_STATE_RELEASED;
+            if (self->touch_down_) {
+                self->touch_down_ = false;
+                // Hold for 3 s in the chatbot: WiFi configuration. Not in the
+                // other apps, where a long press is just a slow tap or a scroll.
+                bool in_chat = self->launcher_ == nullptr ||
+                               self->launcher_->current() == Launcher::App::kChat;
+                if (in_chat && now_ms - self->touch_down_ms_ > 3000) {
+                    Application::GetInstance().Schedule([self]() { self->EnterWifiConfigMode(); });
                 }
             }
-
-            self->UpdateTalkButton(app.GetDeviceState());
-            vTaskDelay(pdMS_TO_TICKS(50));
         }
     }
 
     void InitializeTouch() {
-        // The ES3N28P variant has no touch panel; skip polling when nothing answers.
+        // The ES3N28P variant has no touch panel.
         if (i2c_master_probe(codec_i2c_bus_, TOUCH_I2C_ADDR, 100) != ESP_OK) {
             ESP_LOGI(TAG, "No touch panel found");
             return;
         }
         if (!touch_.Init(codec_i2c_bus_, TOUCH_I2C_ADDR)) return;
-        InitializeTalkButton();
-        xTaskCreatePinnedToCore(TouchTask, "touch_task", 4096, this, 5, nullptr, 0);
+        {
+            DisplayLockGuard lock(display_);
+            touch_indev_ = lv_indev_create();
+            lv_indev_set_type(touch_indev_, LV_INDEV_TYPE_POINTER);
+            lv_indev_set_read_cb(touch_indev_, TouchRead);
+            lv_indev_set_user_data(touch_indev_, this);
+            InitializeTalkButton();
+            // Hide the chatbot UI (robot eyes) that the app shows first, until
+            // the launcher's welcome screen replaces it.
+            boot_cover_ = lv_obj_create(lv_layer_sys());
+            lv_obj_remove_style_all(boot_cover_);
+            lv_obj_set_size(boot_cover_, LV_PCT(100), LV_PCT(100));
+            lv_obj_set_style_bg_color(boot_cover_, lv_color_black(), 0);
+            lv_obj_set_style_bg_opa(boot_cover_, LV_OPA_COVER, 0);
+        }
+        // The launcher needs the display's UI, which the app builds after the
+        // board, so create it from the main loop.
+        Application::GetInstance().Schedule([this]() { InitializeLauncher(); });
+    }
+
+    void InitializeSdCard() {
+        sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+        host.slot = SDMMC_HOST_SLOT_1;
+        host.max_freq_khz = SDMMC_FREQ_DEFAULT;
+
+        sdmmc_slot_config_t slot = SDMMC_SLOT_CONFIG_DEFAULT();
+        slot.width = 4;
+        slot.clk = SD_CLK_PIN;
+        slot.cmd = SD_CMD_PIN;
+        slot.d0 = SD_D0_PIN;
+        slot.d1 = SD_D1_PIN;
+        slot.d2 = SD_D2_PIN;
+        slot.d3 = SD_D3_PIN;
+        slot.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
+
+        esp_vfs_fat_sdmmc_mount_config_t mount_config = {};
+        mount_config.format_if_mount_failed = false;
+        mount_config.max_files = 4;
+        mount_config.allocation_unit_size = 16 * 1024;
+
+        sdmmc_card_t* card = nullptr;
+        esp_err_t ret = esp_vfs_fat_sdmmc_mount(SD_MOUNT_POINT, &host, &slot, &mount_config, &card);
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "No SD card mounted: %s", esp_err_to_name(ret));
+            return;
+        }
+        sd_mounted_ = true;
+        ESP_LOGI(TAG, "SD card mounted at %s (%llu MB)", SD_MOUNT_POINT,
+                 static_cast<unsigned long long>(card->csd.capacity) * card->csd.sector_size / (1024 * 1024));
+    }
+
+    void InitializeLauncher() {
+        auto& app = Application::GetInstance();
+        music_player_ = new LocalMusicPlayer(app.GetAudioService(), GetAudioCodec()->output_sample_rate());
+        launcher_ = new Launcher(display_, music_player_, sd_mounted_ ? SD_MOUNT_POINT : "",
+                                 [this](Launcher::App current) {
+                                     // The talk button belongs to the chatbot app.
+                                     if (current == Launcher::App::kChat) {
+                                         lv_obj_remove_flag(talk_button_, LV_OBJ_FLAG_HIDDEN);
+                                     } else {
+                                         lv_obj_add_flag(talk_button_, LV_OBJ_FLAG_HIDDEN);
+                                     }
+                                 });
+        DisplayLockGuard lock(display_);
+        lv_obj_delete(boot_cover_);
+        boot_cover_ = nullptr;
     }
 
     void InitializeI2c() {
@@ -305,6 +367,9 @@ private:
 
     void InitializeButtons() {
         boot_button_.OnClick([this]() {
+            if (launcher_ != nullptr && launcher_->HandleBootButton()) {
+                return;  // play/pause in the music app
+            }
             auto &app = Application::GetInstance();
             if (app.GetDeviceState() == kDeviceStateStarting) {
                 EnterWifiConfigMode();
@@ -358,6 +423,7 @@ public:
         InitializeBatteryMonitor();
         InitializeSpi();
         InitializeLcdDisplay();
+        InitializeSdCard();
         InitializeTouch();
         InitializeBatteryIndicator();
         InitializeButtons();

@@ -1268,8 +1268,8 @@ void LcdDisplay::SetTheme(Theme* theme) {
 
     auto lvgl_theme = static_cast<LvglTheme*>(theme);
 
-    // Get the active screen
-    lv_obj_t* screen = lv_screen_active();
+    // This display's own screen: a board may have another screen loaded right now.
+    lv_obj_t* screen = lv_obj_get_screen(container_);
 
     // Set font
     auto text_font = lvgl_theme->text_font()->font();

@@ -807,6 +807,11 @@ void Application::HandleToggleChatEvent() {
     pending_music_url_.clear();
     pending_music_title_.clear();
 
+    if (chat_suspended_.load()) {
+        ESP_LOGI(TAG, "Chat is suspended, ignoring toggle");
+        return;
+    }
+
     if (state == kDeviceStateNotifying) {
         // Pressing the button during playback means "stop", not "stop and then
         // start talking to me". End the track and return to idle.
@@ -876,6 +881,9 @@ void Application::ContinueOpenAudioChannel(ListeningMode mode) {
 }
 
 void Application::HandleStartListeningEvent() {
+    if (chat_suspended_.load()) {
+        return;
+    }
     auto state = GetDeviceState();
 
     if (state == kDeviceStateNotifying) {
@@ -929,7 +937,7 @@ void Application::HandleStopListeningEvent() {
 }
 
 void Application::HandleWakeWordDetectedEvent() {
-    if (!protocol_) {
+    if (!protocol_ || chat_suspended_.load()) {
         return;
     }
 
@@ -1051,7 +1059,8 @@ void Application::HandleStateChangedEvent() {
                     "neutral");  // Then set emotion (wechat mode checks child count)
             }
             audio_service_.EnableVoiceProcessing(false);
-            audio_service_.EnableWakeWordDetection(true);
+            // Another app owns the speaker while chat is suspended.
+            audio_service_.EnableWakeWordDetection(!chat_suspended_.load());
             if (!pending_music_url_.empty()) {
                 StartPendingMusic();
             }
@@ -1258,6 +1267,28 @@ void Application::DrainToIdleForMusic() {
     }
 }
 
+void Application::SetChatSuspended(bool suspended) {
+    if (chat_suspended_.exchange(suspended) == suspended) {
+        return;
+    }
+    ESP_LOGI(TAG, "Chat %s", suspended ? "suspended" : "resumed");
+    Schedule([this, suspended]() {
+        if (suspended) {
+            pending_music_url_.clear();
+            pending_music_title_.clear();
+            if (GetDeviceState() == kDeviceStateNotifying) {
+                StopNotification();
+            }
+            // Ends a conversation: the channel close returns the device to idle,
+            // and the idle handler leaves the wake word off.
+            DrainToIdleForMusic();
+            audio_service_.EnableWakeWordDetection(false);
+        } else if (GetDeviceState() == kDeviceStateIdle) {
+            audio_service_.EnableWakeWordDetection(true);
+        }
+    });
+}
+
 void Application::StopMusic() {
     Schedule([this]() {
         pending_music_url_.clear();
@@ -1300,6 +1331,10 @@ void Application::StartPendingMusic() {
 }
 
 void Application::StartNotification(std::string audio_url, std::vector<NotifySubtitle> subtitles) {
+    if (chat_suspended_.load()) {
+        ESP_LOGW(TAG, "Ignoring notify message while chat is suspended");
+        return;
+    }
     if (GetDeviceState() != kDeviceStateIdle || notify_player_.IsBusy()) {
         ESP_LOGW(TAG, "Ignoring notify message while device is busy");
         return;

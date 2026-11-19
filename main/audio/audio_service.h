@@ -143,6 +143,11 @@ public:
     void SetCallbacks(AudioServiceCallbacks& callbacks);
 
     bool PushPacketToDecodeQueue(std::unique_ptr<AudioStreamPacket> packet, bool wait = false);
+    // Plays PCM produced outside the Opus path, such as a local file player.
+    // The samples must be mono at the codec's output sample rate. Blocks while
+    // the playback queue is full; returns false once ResetDecoder() runs or the
+    // service stops, which is how a player learns its stream was cancelled.
+    bool PushPcmToPlaybackQueue(std::vector<int16_t>&& pcm);
     std::unique_ptr<AudioStreamPacket> PopPacketFromSendQueue();
     void PlaySound(const std::string_view& sound);
     bool ReadAudioData(std::vector<int16_t>& data, int sample_rate, int samples);

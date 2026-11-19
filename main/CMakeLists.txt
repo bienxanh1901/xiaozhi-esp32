@@ -5,6 +5,12 @@ set(SOURCES "audio/audio_codec.cc"
             "audio/demuxer/ogg_demuxer.cc"
             "notify/notify_player.cc"
             "music/music_library.cc"
+            "music/local_player.cc"
+            "apps/launcher.cc"
+            "apps/games_app.cc"
+            "apps/game_logic.cc"
+            "apps/english_app.cc"
+            "apps/english_words.cc"
             "audio/codecs/no_audio_codec.cc"
             "audio/codecs/box_audio_codec.cc"
             "audio/codecs/es8311_audio_codec.cc"
@@ -892,6 +898,9 @@ elseif(CONFIG_BOARD_TYPE_LCDWIKI_ES3C28P)
     set(BOARD_DIR "lcdwiki-es3c28p")
     set(BUILTIN_TEXT_FONT font_noto_sans_basic_20_4)
     set(BUILTIN_ICON_FONT font_material_symbols_20_4)
+    # The English app's word clips and pictures (scripts/gen_english_audio.py,
+    # scripts/gen_english_images.py); files in subfolders are packed by name.
+    set(DEFAULT_ASSETS_EXTRA_FILES "${CMAKE_CURRENT_SOURCE_DIR}/apps/english_assets")
     set(DEFAULT_EMOJI_COLLECTION noto-color-emoji_64)
 elseif(CONFIG_BOARD_TYPE_LCDWIKI_ES3C35P)
     set(BOARD_DIR "lcdwiki-es3c35p")
@@ -1360,6 +1369,10 @@ function(build_default_assets_bin)
     # Add default assets extra files if defined
     if(DEFAULT_ASSETS_EXTRA_FILES)
         list(APPEND BUILD_ARGS "--extra_files" "${DEFAULT_ASSETS_EXTRA_FILES}")
+        # Rebuild the assets when a file in the directory changes
+        file(GLOB_RECURSE DEFAULT_ASSETS_EXTRA_DEPENDENCIES CONFIGURE_DEPENDS
+            "${DEFAULT_ASSETS_EXTRA_FILES}/*")
+        list(APPEND DEFAULT_ASSETS_DEPENDENCIES ${DEFAULT_ASSETS_EXTRA_DEPENDENCIES})
     endif()
 
     list(APPEND BUILD_ARGS "--esp_sr_model_path" "${ESP_SR_MODEL_PATH}")

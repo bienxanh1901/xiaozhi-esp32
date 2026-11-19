@@ -13,6 +13,7 @@
 #include <functional>
 #include <cstdint>
 #include <vector>
+#include <atomic>
 
 #include "protocol.h"
 #include "ota.h"
@@ -129,6 +130,12 @@ public:
     bool PlayMusic(const std::string& url, const std::string& title = "");
     void StopMusic();
     bool IsMusicPlaying() const;
+
+    // Pause the chatbot while another app (such as a local music player) owns
+    // the speaker: ends any conversation or server playback, turns the wake
+    // word off, and ignores chat triggers until resumed. Safe from any task.
+    void SetChatSuspended(bool suspended);
+    bool IsChatSuspended() const { return chat_suspended_.load(); }
     
     /**
      * Reset protocol resources (thread-safe)
@@ -169,6 +176,7 @@ private:
     std::string pending_music_url_;    // Music requested while the device was busy
     std::string pending_music_title_;  // Title shown for the pending track
     int64_t pending_music_deadline_us_ = 0;  // A queued song expires if it cannot start
+    std::atomic<bool> chat_suspended_{false};
     int clock_ticks_ = 0;
     TaskHandle_t activation_task_handle_ = nullptr;
 

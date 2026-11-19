@@ -32,6 +32,76 @@ does not. Touch is detected at startup and skipped when absent.
 | Battery ADC | 9 |
 | BOOT button | 0 |
 
+## Home screen and apps
+
+On boards with touch (ES3C28P) the device powers on to a welcome screen
+(a robot face, "hello" and "please wait"). Once startup is done it opens a home
+screen with four apps; when activation or WiFi setup needs the user, the
+chatbot screen opens instead. The volume button at the top left of the home
+screen shows the speaker volume; tap it for a panel with a slider and
+-/+ buttons (steps of 10, a beep at the new level). The volume is saved, and is
+the same one the chatbot changes by voice. The apps are (`main/apps/launcher.*`):
+
+- **Chatbot**: the voice assistant with the robot eyes. A home button sits in
+  the bottom-left corner. A conversation started from the home screen (wake
+  word or BOOT) opens this app automatically.
+- **Music**: plays MP3, M4A/AAC, FLAC and WAV files from the MicroSD card
+  (folders up to three levels deep, sorted by path). Tap a track to play it;
+  the bar below has previous, play/pause, next and volume. BOOT is play/pause
+  while this app is open. The chatbot is paused here (no wake word) so it
+  never talks over the music; leaving the app stops playback and resumes it.
+
+- **Games**: eleven one-finger games in a menu that scrolls
+  (`main/apps/games_app.*`). The chatbot is paused here too, and leaving the app
+  ends the game.
+  - *Tic-Tac-Toe*: your star against the robot, taking turns to go first. The
+    robot sometimes misses a block, so children can win.
+  - *Memory*: find the six pairs among twelve cards; the top bar counts moves.
+  - *Snake*: tap above, below or beside the snake to turn that way. It speeds
+    up as it grows. The top bar shows score/best, and the best score is kept.
+  - *Copy Me*: watch the pads light up, then tap them in the same order. The
+    sequence grows by one each round; the best score is kept.
+  - *Bop the Bot*: tap the robots before they hide, in a 30-second round that
+    gets faster. The bar under the title shows the time left; the best score
+    is kept.
+  - *Slide Puzzle*: slide the tiles next to the gap to put 1 to 8 back in order.
+    The top bar counts moves.
+  - *Four in a Row*: tap a column to drop your yellow disc, against the robot's
+    blue ones, taking turns to go first. The robot sometimes misses a block.
+  - *Quick Sums*: ten sums with three answers each, up to 10 and then up to 20.
+    Only a right first try scores.
+  - *Catch Stars*: slide a finger to move the basket. Dropping a star or catching
+    a red mark costs one of three lives; the best score is kept.
+  - *Robot Hop*: tap to jump over the blocks; it speeds up as you go. The best
+    score is kept.
+  - *Odd One Out*: tap the tile with a different color. The difference shrinks
+    each round, one wrong tap ends the game, and the best score is kept.
+- **English**: English words for children, with Vietnamese meanings
+  (`main/apps/english_app.*`, words in `english_words.cc`). Fourteen
+  topics in a menu that scrolls: colors, numbers, things, animals, fruits, the
+  body, food, vegetables, vehicles, nature, clothes, family, school and toys. A
+  tile shows its topic's first picture. Each topic shows word
+  cards (a color swatch, a digit or a picture, the English word and its
+  meaning) and says the word; tap the picture to hear it again, and the arrows
+  for the other cards. The mic button opens the chatbot, listening, to practise
+  saying the word; the home button there ends the conversation, and the
+  English tile brings the topic back. The quiz button starts ten questions:
+  pick the English word for the picture and meaning. A wrong pick turns red
+  and can be retried, but only a right first try scores; a right pick says the
+  word. Words are not spoken during a conversation.
+  The word clips and pictures live in `main/apps/english_assets/` and are
+  packed into the assets partition: clips (about 2 KB each) from
+  `scripts/gen_english_audio.py` (edge-tts, voice `en-US-AnaNeural`), pictures
+  (88x88 RGB565A8, 23 KB each) from `scripts/gen_english_images.py` (Noto Color
+  Emoji, Apache License 2.0). After adding a word, give it an emoji in that
+  script, run both scripts and flash the assets too. Without the pictures a
+  card falls back to an icon or the word's first letter.
+  The chatbot stays on here, so a wake word opens it. English words use the
+  built-in Montserrat 28 font (`CONFIG_LV_FONT_MONTSERRAT_28`).
+
+The SD card must be FAT32. File names may use Vietnamese and other non-ASCII
+characters (the board enables UTF-8 file names).
+
 ## Display
 
 The screen shows animated robot eyes (`main/display/eye_display.h`, shared

@@ -59,9 +59,17 @@
 #define TOUCH_MIRROR_X        false
 #define TOUCH_MIRROR_Y        true
 
+// MicroSD (SDMMC, 4-bit)
+#define SD_MOUNT_POINT        "/sdcard"
+#define SD_CLK_PIN            GPIO_NUM_38
+#define SD_CMD_PIN            GPIO_NUM_40
+#define SD_D0_PIN             GPIO_NUM_39
+#define SD_D1_PIN             GPIO_NUM_41
+#define SD_D2_PIN             GPIO_NUM_48
+#define SD_D3_PIN             GPIO_NUM_47
+
 // On-screen talk button, bottom-right corner (pixels)
 #define TALK_BUTTON_SIZE      64
 #define TALK_BUTTON_MARGIN    12
-#define TALK_BUTTON_SLOP      16
 
 #endif  // _BOARD_CONFIG_H_
