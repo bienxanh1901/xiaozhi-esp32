@@ -10,9 +10,10 @@ namespace apps {
 class GameView;
 
 /**
- * The Games app: a scrolling menu and eleven touch games (Tic-Tac-Toe, Memory,
+ * The Games app: a scrolling menu and fifteen touch games (Tic-Tac-Toe, Memory,
  * Snake, Copy Me, Bop the Bot, Slide Puzzle, Four in a Row, Quick Sums, Catch
- * Stars, Robot Hop, Odd One Out).
+ * Stars, Robot Hop, Odd One Out, Lights Out, Number Merge, How Many?, Balloon
+ * Pop).
  * The rules live in game_logic.*; this is the screen side. Each game is built
  * when opened and freed when closed, so it costs nothing while not played.
  * Everything runs in the LVGL context.

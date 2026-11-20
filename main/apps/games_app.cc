@@ -1,5 +1,6 @@
 #include "games_app.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <deque>
 #include <string_view>
@@ -1343,6 +1344,504 @@ private:
     }
 };
 
+// ── Lights Out: switch every light off ────────────────────────────────────
+class LightsView : public GameView {
+public:
+    LightsView(lv_obj_t* parent, std::function<void()> on_back)
+        : GameView(parent, "Lights Out", std::move(on_back)) {
+        level_ = std::max<int>(Settings("games").GetInt("lights_level", 1), 1);
+        const int cell = 32, gap = 3, left = 10, top = kTopBar + 6;
+        for (int i = 0; i < Game::kCells; ++i) {
+            lv_obj_t* button = lv_button_create(root_);
+            lv_obj_set_size(button, cell, cell);
+            lv_obj_set_pos(button, left + (i % Game::kSize) * (cell + gap),
+                           top + (i / Game::kSize) * (cell + gap));
+            lv_obj_set_style_radius(button, 8, 0);
+            lv_obj_set_style_shadow_width(button, 0, 0);
+            BindClick(button, [this, i]() { OnCell(i); });
+            cells_[i] = button;
+        }
+        const int panel = left + Game::kSize * (cell + gap) + 8;
+        status_ = MakeTextLabel(root_);
+        lv_obj_set_pos(status_, panel, top + 4);
+        lv_obj_set_width(status_, 320 - panel - 6);
+        lv_label_set_long_mode(status_, LV_LABEL_LONG_MODE_WRAP);
+        // Try the same puzzle again from the start.
+        lv_obj_t* restart = MakeIconButton(root_, MATERIAL_SYMBOLS_REFRESH, 104, 44, [this]() {
+            if (game_.IsSolved())
+                return;
+            game_ = start_;
+            Show();
+        });
+        lv_obj_set_pos(restart, panel, top + 124);
+        banner_ = MakeBanner([this]() { NewPuzzle(); });
+        NewPuzzle();
+    }
+
+private:
+    using Game = games::LightsOut;
+    static constexpr uint32_t kOnColor = 0xFFCA28;
+
+    Game game_;
+    Game start_;  // For trying the same puzzle again
+    lv_obj_t* cells_[Game::kCells];
+    lv_obj_t* status_;
+    lv_obj_t* banner_;
+    int level_ = 1;
+
+    void NewPuzzle() {
+        lv_obj_add_flag(banner_, LV_OBJ_FLAG_HIDDEN);
+        game_.NewPuzzle(level_, HardwareRandom);
+        start_ = game_;
+        Show();
+    }
+
+    void Show() {
+        for (int i = 0; i < Game::kCells; ++i) {
+            lv_obj_set_style_bg_color(cells_[i], lv_color_hex(game_.On(i) ? kOnColor : kCellColor),
+                                      0);
+        }
+        lv_label_set_text_fmt(status_, "Turn all the lights off.\n\nMoves: %d", game_.Moves());
+        lv_label_set_text_fmt(info_, "Level %d", game_.Level());
+    }
+
+    void OnCell(int cell) {
+        if (!game_.Press(cell))
+            return;
+        Show();
+        if (!game_.IsSolved()) {
+            PlaySound(Lang::Sounds::OGG_POPUP);
+            return;
+        }
+        PlaySound(Lang::Sounds::OGG_SUCCESS);
+        ++level_;
+        Settings("games", true).SetInt("lights_level", level_);
+        char text[64];
+        snprintf(text, sizeof(text), "All off in %d moves!\n\nTap for level %d", game_.Moves(),
+                 level_);
+        ShowBanner(banner_, text);
+    }
+};
+
+// ── Number Merge: slide equal numbers together ────────────────────────────
+class MergeView : public GameView {
+public:
+    MergeView(lv_obj_t* parent, std::function<void()> on_back)
+        : GameView(parent, "Number Merge", std::move(on_back)) {
+        best_ = Settings("games").GetInt("merge_best", 0);
+        const int cell = 40, gap = 4, left = 10, top = kTopBar + 6;
+        const int size = Game::kSize * cell + (Game::kSize + 1) * gap;
+        board_ = lv_obj_create(root_);
+        PlainBox(board_);
+        lv_obj_set_size(board_, size, size);
+        lv_obj_set_pos(board_, left - gap, top - gap);
+        lv_obj_set_style_radius(board_, 8, 0);
+        lv_obj_set_style_bg_color(board_, lv_color_hex(0x1A2127), 0);
+        lv_obj_add_flag(board_, LV_OBJ_FLAG_CLICKABLE);
+        // A swipe on the board moves the tiles.
+        BindEvent(board_, LV_EVENT_GESTURE, [this]() {
+            switch (lv_indev_get_gesture_dir(lv_indev_active())) {
+                case LV_DIR_LEFT:
+                    OnMove(Dir::kLeft);
+                    break;
+                case LV_DIR_RIGHT:
+                    OnMove(Dir::kRight);
+                    break;
+                case LV_DIR_TOP:
+                    OnMove(Dir::kUp);
+                    break;
+                case LV_DIR_BOTTOM:
+                    OnMove(Dir::kDown);
+                    break;
+                default:
+                    break;
+            }
+        });
+        for (int i = 0; i < Game::kCells; ++i) {
+            lv_obj_t* tile = lv_obj_create(board_);
+            PlainBox(tile);
+            lv_obj_remove_flag(tile, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_set_size(tile, cell, cell);
+            lv_obj_set_pos(tile, gap + (i % Game::kSize) * (cell + gap),
+                           gap + (i / Game::kSize) * (cell + gap));
+            lv_obj_set_style_radius(tile, 6, 0);
+            numbers_[i] = MakeTextLabel(tile);
+            lv_obj_center(numbers_[i]);
+            tiles_[i] = tile;
+        }
+
+        // Arrow buttons too: a swipe is hard for small fingers.
+        const int panel = left + size + 4, b = 40;
+        score_ = MakeTextLabel(root_);
+        lv_obj_set_pos(score_, panel, top);
+        const int cx = panel + (320 - panel - b) / 2, row = top + 30;
+        lv_obj_set_pos(MakeIconButton(root_, MATERIAL_SYMBOLS_KEYBOARD_ARROW_UP, b, b,
+                                      [this]() { OnMove(Dir::kUp); }),
+                       cx, row);
+        lv_obj_set_pos(MakeIconButton(root_, MATERIAL_SYMBOLS_KEYBOARD_ARROW_LEFT, b, b,
+                                      [this]() { OnMove(Dir::kLeft); }),
+                       cx - b - 2, row + b + 4);
+        lv_obj_set_pos(MakeIconButton(root_, MATERIAL_SYMBOLS_KEYBOARD_ARROW_RIGHT, b, b,
+                                      [this]() { OnMove(Dir::kRight); }),
+                       cx + b + 2, row + b + 4);
+        lv_obj_set_pos(MakeIconButton(root_, MATERIAL_SYMBOLS_KEYBOARD_ARROW_DOWN, b, b,
+                                      [this]() { OnMove(Dir::kDown); }),
+                       cx, row + 2 * (b + 4));
+        banner_ = MakeBanner([this]() { NewGame(); });
+        NewGame();
+    }
+
+private:
+    using Game = games::MergeGame;
+    using Dir = Game::Direction;
+
+    Game game_;
+    lv_obj_t* board_;
+    lv_obj_t* tiles_[Game::kCells];
+    lv_obj_t* numbers_[Game::kCells];
+    lv_obj_t* score_;
+    lv_obj_t* banner_;
+    int best_ = 0;
+    bool goal_shown_ = false;
+
+    static uint32_t TileColor(int value) {
+        switch (value) {
+            case 0:
+                return 0x2B343C;
+            case 2:
+                return 0x5C6BC0;
+            case 4:
+                return 0x26A69A;
+            case 8:
+                return 0x66BB6A;
+            case 16:
+                return 0xD4E157;
+            case 32:
+                return 0xFFCA28;
+            case 64:
+                return 0xFFA726;
+            case 128:
+                return 0xFF7043;
+            case 256:
+                return 0xEC407A;
+            case 512:
+                return 0xAB47BC;
+            default:
+                return 0xE53935;
+        }
+    }
+
+    void NewGame() {
+        lv_obj_add_flag(banner_, LV_OBJ_FLAG_HIDDEN);
+        game_.Reset(HardwareRandom);
+        goal_shown_ = false;
+        Show();
+    }
+
+    void Show() {
+        for (int i = 0; i < Game::kCells; ++i) {
+            const int value = game_.At(i);
+            lv_obj_set_style_bg_color(tiles_[i], lv_color_hex(TileColor(value)), 0);
+            if (value == 0) {
+                lv_label_set_text(numbers_[i], "");
+            } else {
+                lv_label_set_text_fmt(numbers_[i], "%d", value);
+            }
+        }
+        lv_label_set_text_fmt(score_, "Score %d", game_.Score());
+        lv_label_set_text_fmt(info_, "Best %d", std::max(best_, game_.Score()));
+    }
+
+    void OnMove(Dir direction) {
+        if (!lv_obj_has_flag(banner_, LV_OBJ_FLAG_HIDDEN))
+            return;
+        const int score = game_.Score();
+        if (!game_.Move(direction, HardwareRandom))
+            return;
+        Show();
+        if (game_.Score() > score)
+            PlaySound(Lang::Sounds::OGG_POPUP);
+        if (!goal_shown_ && game_.Largest() >= Game::kGoal) {
+            goal_shown_ = true;
+            PlaySound(Lang::Sounds::OGG_SUCCESS);
+        }
+        if (game_.IsOver())
+            GameOver();
+    }
+
+    void GameOver() {
+        const int score = game_.Score();
+        const bool record = score > best_;
+        if (record) {
+            best_ = score;
+            Settings("games", true).SetInt("merge_best", best_);
+        }
+        PlaySound(record ? Lang::Sounds::OGG_SUCCESS : Lang::Sounds::OGG_VIBRATION);
+        After(1000, [this, score, record]() {
+            char text[80];
+            snprintf(text, sizeof(text), "No more moves.\nScore %d%s\n\nTap to play again", score,
+                     record ? " - new best!" : "");
+            ShowBanner(banner_, text);
+        });
+    }
+};
+
+// ── How Many?: count the pictures ─────────────────────────────────────────
+class CountView : public GameView {
+public:
+    CountView(lv_obj_t* parent, std::function<void()> on_back)
+        : GameView(parent, "How Many?", std::move(on_back)) {
+        for (int i = 0; i < Game::kMaxCount; ++i) {
+            pictures_[i] = MakeIconLabel(root_, "");
+            lv_obj_add_flag(pictures_[i], LV_OBJ_FLAG_HIDDEN);
+        }
+        const int w = 98, h = 56, gap = 4, left = 9, top = kTopBar + 124;
+        for (int i = 0; i < Game::kChoices; ++i) {
+            lv_obj_t* button = lv_button_create(root_);
+            lv_obj_set_size(button, w, h);
+            lv_obj_set_pos(button, left + i * (w + gap), top);
+            lv_obj_set_style_radius(button, 12, 0);
+            lv_obj_set_style_shadow_width(button, 0, 0);
+            lv_obj_set_style_pad_all(button, 0, 0);
+            answers_[i] = MakeTextLabel(button);
+#if LV_FONT_MONTSERRAT_28
+            lv_obj_set_style_text_font(answers_[i], &lv_font_montserrat_28, 0);
+#else
+            lv_obj_set_style_transform_pivot_x(answers_[i], lv_pct(50), 0);
+            lv_obj_set_style_transform_pivot_y(answers_[i], lv_pct(50), 0);
+            lv_obj_set_style_transform_scale(answers_[i], 256 * 3 / 2, 0);
+#endif
+            lv_obj_center(answers_[i]);
+            BindClick(button, [this, i]() { OnAnswer(i); });
+            buttons_[i] = button;
+        }
+        banner_ = MakeBanner([this]() { NewRound(); });
+        NewRound();
+    }
+
+private:
+    using Game = games::CountGame;
+    static constexpr uint32_t kAnswerColor = 0x1565C0;
+    static constexpr uint32_t kWrongColor = 0xC62828;
+
+    Game game_;
+    lv_obj_t* pictures_[Game::kMaxCount];
+    lv_obj_t* buttons_[Game::kChoices];
+    lv_obj_t* answers_[Game::kChoices];
+    lv_obj_t* banner_;
+
+    void NewRound() {
+        CancelDelay();
+        lv_obj_add_flag(banner_, LV_OBJ_FLAG_HIDDEN);
+        game_.Start(HardwareRandom);
+        ShowQuestion();
+    }
+
+    void ShowQuestion() {
+        static const char* const kIcons[Game::kKinds] = {
+            MATERIAL_SYMBOLS_STAR, MATERIAL_SYMBOLS_FAVORITE, MATERIAL_SYMBOLS_ROBOT_2,
+            MATERIAL_SYMBOLS_MUSIC_NOTE};
+        static const uint32_t kColors[Game::kKinds] = {0xFFCA28, 0xEF5350, 0x4DD0E1, 0xCE93D8};
+        // A grid of slots across the top, 50x38 each.
+        const int slot_w = 50, slot_h = 38, left = 10 + (slot_w - 30) / 2, top = kTopBar + 8;
+        for (int i = 0; i < Game::kMaxCount; ++i) {
+            if (i >= game_.Count()) {
+                lv_obj_add_flag(pictures_[i], LV_OBJ_FLAG_HIDDEN);
+                continue;
+            }
+            const int slot = game_.Slot(i);
+            lv_label_set_text(pictures_[i], kIcons[game_.Kind()]);
+            lv_obj_set_style_text_color(pictures_[i], lv_color_hex(kColors[game_.Kind()]), 0);
+            lv_obj_set_pos(pictures_[i], left + (slot % Game::kSlotCols) * slot_w,
+                           top + (slot / Game::kSlotCols) * slot_h);
+            lv_obj_remove_flag(pictures_[i], LV_OBJ_FLAG_HIDDEN);
+        }
+        for (int i = 0; i < Game::kChoices; ++i) {
+            lv_label_set_text_fmt(answers_[i], "%d", game_.Choice(i));
+            lv_obj_set_style_bg_color(buttons_[i], lv_color_hex(kAnswerColor), 0);
+        }
+        lv_label_set_text_fmt(info_, "%d/%d", game_.Question() + 1, Game::kQuestions);
+    }
+
+    void OnAnswer(int choice) {
+        const auto result = game_.Answer(choice);
+        if (result == Game::Result::kIgnored)
+            return;
+        if (result == Game::Result::kWrong) {
+            lv_obj_set_style_bg_color(buttons_[choice], lv_color_hex(kWrongColor), 0);
+            PlaySound(Lang::Sounds::OGG_VIBRATION);
+            return;
+        }
+        lv_obj_set_style_bg_color(buttons_[choice], lv_color_hex(kWinColor), 0);
+        PlaySound(Lang::Sounds::OGG_POPUP);
+        After(900, [this]() {
+            if (game_.Next(HardwareRandom)) {
+                ShowQuestion();
+            } else {
+                char text[64];
+                snprintf(text, sizeof(text), "You got %d out of %d right!\n\nTap to play again",
+                         game_.Score(), Game::kQuestions);
+                ShowBanner(banner_, text);
+                PlaySound(Lang::Sounds::OGG_SUCCESS);
+            }
+        });
+    }
+};
+
+// ── Balloon Pop: tap the balloons before they float away ──────────────────
+class BalloonView : public GameView {
+public:
+    BalloonView(lv_obj_t* parent, std::function<void()> on_back)
+        : GameView(parent, "Balloon Pop", std::move(on_back)) {
+        best_ = Settings("games").GetInt("balloon_best", 0);
+
+        area_ = lv_obj_create(root_);
+        PlainBox(area_);
+        lv_obj_set_size(area_, Game::kWidth, Game::kHeight);
+        lv_obj_set_pos(area_, 0, kTopBar + 4);
+        lv_obj_set_style_bg_color(area_, lv_color_hex(0x0D2538), 0);
+        lv_obj_add_flag(area_, LV_OBJ_FLAG_CLICKABLE);
+        BindEvent(area_, LV_EVENT_PRESSED, [this]() { OnTouch(); });
+
+        static const uint32_t kColors[Game::kColors] = {0xEF5350, 0xFFCA28, 0x66BB6A, 0x42A5F5,
+                                                        0xAB47BC};
+        for (int i = 0; i < Game::kMaxBalloons; ++i) {
+            lv_obj_t* balloon = lv_obj_create(area_);
+            PlainBox(balloon);
+            lv_obj_remove_flag(balloon, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_set_size(balloon, Game::kSize, Game::kSize);
+            lv_obj_set_style_radius(balloon, LV_RADIUS_CIRCLE, 0);
+            lv_obj_add_flag(balloon, LV_OBJ_FLAG_HIDDEN);
+            // A shine, so it reads as a balloon rather than a dot.
+            lv_obj_t* shine = lv_obj_create(balloon);
+            PlainBox(shine);
+            lv_obj_remove_flag(shine, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_set_size(shine, 10, 10);
+            lv_obj_set_style_radius(shine, LV_RADIUS_CIRCLE, 0);
+            lv_obj_set_style_bg_color(shine, lv_color_white(), 0);
+            lv_obj_set_style_bg_opa(shine, LV_OPA_60, 0);
+            lv_obj_set_pos(shine, 9, 8);
+            balloons_[i] = balloon;
+        }
+        for (int i = 0; i < Game::kColors; ++i)
+            colors_[i] = kColors[i];
+        for (int i = 0; i < Game::kStartLives; ++i) {
+            lives_[i] = MakeIconLabel(area_, MATERIAL_SYMBOLS_FAVORITE);
+            lv_obj_set_style_text_color(lives_[i], lv_color_hex(0xEF5350), 0);
+            lv_obj_set_style_text_opa(lives_[i], LV_OPA_50, 0);
+            lv_obj_set_pos(lives_[i], 2 + i * 32, 0);
+        }
+        banner_ = MakeBanner([this]() {
+            if (can_start_)
+                Start();
+        });
+        game_.Reset();
+        ShowField();
+        ShowScore();
+        ShowBanner(banner_, "Pop the balloons before\nthey float away!\n\nTap to start");
+    }
+
+    ~BalloonView() override {
+        if (tick_ != nullptr)
+            lv_timer_delete(tick_);
+    }
+
+private:
+    using Game = games::BalloonGame;
+    static constexpr int kTickMs = 40;
+
+    Game game_;
+    lv_obj_t* area_;
+    lv_obj_t* balloons_[Game::kMaxBalloons];
+    int shown_color_[Game::kMaxBalloons] = {-1, -1, -1, -1, -1, -1, -1};
+    uint32_t colors_[Game::kColors];
+    lv_obj_t* lives_[Game::kStartLives];
+    lv_obj_t* banner_;
+    lv_timer_t* tick_ = nullptr;
+    int best_ = 0;
+    bool can_start_ = true;
+
+    void ShowScore() { lv_label_set_text_fmt(info_, "%d/%d", game_.Score(), best_); }
+
+    void ShowField() {
+        for (int i = 0; i < Game::kStartLives; ++i) {
+            if (i < game_.Lives()) {
+                lv_obj_remove_flag(lives_[i], LV_OBJ_FLAG_HIDDEN);
+            } else {
+                lv_obj_add_flag(lives_[i], LV_OBJ_FLAG_HIDDEN);
+            }
+        }
+        for (int i = 0; i < Game::kMaxBalloons; ++i) {
+            const auto& balloon = game_.At(i);
+            if (!balloon.active) {
+                lv_obj_add_flag(balloons_[i], LV_OBJ_FLAG_HIDDEN);
+                shown_color_[i] = -1;
+                continue;
+            }
+            if (shown_color_[i] != balloon.color) {
+                shown_color_[i] = balloon.color;
+                lv_obj_set_style_bg_color(balloons_[i], lv_color_hex(colors_[balloon.color]), 0);
+            }
+            lv_obj_set_pos(balloons_[i], balloon.x, balloon.y_milli / 1000);
+            lv_obj_remove_flag(balloons_[i], LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    void Start() {
+        lv_obj_add_flag(banner_, LV_OBJ_FLAG_HIDDEN);
+        game_.Reset();
+        ShowScore();
+        ShowField();
+        tick_ = lv_timer_create(
+            [](lv_timer_t* timer) {
+                static_cast<BalloonView*>(lv_timer_get_user_data(timer))->Tick();
+            },
+            kTickMs, this);
+    }
+
+    void OnTouch() {
+        if (tick_ == nullptr)
+            return;
+        lv_point_t point;
+        lv_indev_get_point(lv_indev_active(), &point);
+        lv_area_t area;
+        lv_obj_get_coords(area_, &area);
+        if (game_.Tap(point.x - area.x1, point.y - area.y1) >= 0) {
+            ShowField();
+            ShowScore();
+            PlaySound(Lang::Sounds::OGG_POPUP);
+        }
+    }
+
+    void Tick() {
+        const int escaped = game_.Advance(kTickMs, HardwareRandom);
+        ShowField();
+        if (escaped > 0 && !game_.IsOver())
+            PlaySound(Lang::Sounds::OGG_VIBRATION);
+        if (game_.IsOver())
+            GameOver();
+    }
+
+    void GameOver() {
+        lv_timer_delete(tick_);
+        tick_ = nullptr;
+        const int score = game_.Score();
+        const bool record = score > best_;
+        if (record) {
+            best_ = score;
+            Settings("games", true).SetInt("balloon_best", best_);
+        }
+        ShowScore();
+        char text[72];
+        snprintf(text, sizeof(text), "You popped %d balloons%s\n\nTap to play again", score,
+                 record ? " - new best!" : "");
+        ShowBanner(banner_, text);
+        PlaySound(record ? Lang::Sounds::OGG_SUCCESS : Lang::Sounds::OGG_VIBRATION);
+        can_start_ = false;  // A tap meant for a balloon should not restart it
+        After(800, [this]() { can_start_ = true; });
+    }
+};
+
 }  // namespace
 
 GamesApp::GamesApp(std::function<void()> on_exit) : on_exit_(std::move(on_exit)) {
@@ -1374,11 +1873,16 @@ void GamesApp::BuildMenu() {
         {MATERIAL_SYMBOLS_REPEAT, "Copy Me", 0xEF6C00, [this]() { Open<CopyView>(); }},
         {MATERIAL_SYMBOLS_ROBOT_2, "Bop the Bot", 0x00838F, [this]() { Open<BopView>(); }},
         {MATERIAL_SYMBOLS_CALCULATE, "Slide Puzzle", 0x6A1B9A, [this]() { Open<SlideView>(); }},
-        {MATERIAL_SYMBOLS_KEYBOARD_DOUBLE_ARROW_DOWN, "Four in a Row", 0x283593, [this]() { Open<FourView>(); }},
+        {MATERIAL_SYMBOLS_KEYBOARD_DOUBLE_ARROW_DOWN, "Four in a Row", 0x283593,
+         [this]() { Open<FourView>(); }},
         {MATERIAL_SYMBOLS_EDIT_SQUARE, "Quick Sums", 0xD84315, [this]() { Open<SumsView>(); }},
         {MATERIAL_SYMBOLS_STAR, "Catch Stars", 0x558B2F, [this]() { Open<CatchView>(); }},
         {MATERIAL_SYMBOLS_KEYBOARD_ARROW_UP, "Robot Hop", 0x0277BD, [this]() { Open<HopView>(); }},
         {MATERIAL_SYMBOLS_SEARCH, "Odd One Out", 0x6D4C41, [this]() { Open<OddOneView>(); }},
+        {MATERIAL_SYMBOLS_BRIGHTNESS_6, "Lights Out", 0xF9A825, [this]() { Open<LightsView>(); }},
+        {MATERIAL_SYMBOLS_ARROW_FORWARD, "Number Merge", 0xC2185B, [this]() { Open<MergeView>(); }},
+        {MATERIAL_SYMBOLS_FAVORITE, "How Many?", 0x00897B, [this]() { Open<CountView>(); }},
+        {MATERIAL_SYMBOLS_ARROW_UPWARD, "Balloon Pop", 0x5E35B1, [this]() { Open<BalloonView>(); }},
     };
     // Two columns of tiles in a list that scrolls under the top bar.
     lv_obj_t* list = lv_obj_create(menu_);

@@ -54,7 +54,7 @@ the same one the chatbot changes by voice. The apps are (`main/apps/launcher.*`)
   while this app is open. The chatbot is paused here (no wake word) so it
   never talks over the music; leaving the app stops playback and resumes it.
 
-- **Games**: eleven one-finger games in a menu that scrolls
+- **Games**: fifteen one-finger games in a menu that scrolls
   (`main/apps/games_app.*`). The chatbot is paused here too, and leaving the app
   ends the game.
   - *Tic-Tac-Toe*: your star against the robot, taking turns to go first. The
@@ -79,6 +79,16 @@ the same one the chatbot changes by voice. The apps are (`main/apps/launcher.*`)
     score is kept.
   - *Odd One Out*: tap the tile with a different color. The difference shrinks
     each round, one wrong tap ends the game, and the best score is kept.
+  - *Lights Out*: a tap flips a light and the ones next to it; turn them all
+    off. Each level starts further from all-off, the reached level is kept,
+    and the refresh button tries the same puzzle again.
+  - *Number Merge*: swipe the board, or use the arrow buttons, to slide the
+    tiles; equal numbers that meet add up. Over when nothing can move; the best
+    score is kept.
+  - *How Many?*: count the pictures and tap the number, ten questions (up to 5
+    pictures, then up to 10). Only a right first try scores.
+  - *Balloon Pop*: tap the balloons before they float away. Three may escape;
+    they rise faster as the score grows, and the best score is kept.
 - **English**: English words for children, with Vietnamese meanings
   (`main/apps/english_app.*`, words in `english_words.cc`). Twenty
   topics in a menu that scrolls: colors, numbers, things, animals, fruits, the

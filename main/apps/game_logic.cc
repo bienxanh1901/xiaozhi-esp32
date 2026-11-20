@@ -673,4 +673,270 @@ bool OddOneGame::Tap(int cell, const Random& random) {
     return true;
 }
 
+// ── Lights Out ────────────────────────────────────────────────────────────
+
+void LightsOut::Flip(int cell) {
+    const int row = cell / kSize, col = cell % kSize;
+    lights_[cell] = !lights_[cell];
+    if (row > 0)
+        lights_[cell - kSize] = !lights_[cell - kSize];
+    if (row < kSize - 1)
+        lights_[cell + kSize] = !lights_[cell + kSize];
+    if (col > 0)
+        lights_[cell - 1] = !lights_[cell - 1];
+    if (col < kSize - 1)
+        lights_[cell + 1] = !lights_[cell + 1];
+}
+
+void LightsOut::NewPuzzle(int level, const Random& random) {
+    level_ = std::max(level, 1);
+    moves_ = 0;
+    const int taps = std::min(2 + level_, 12);
+    // Some sets of taps cancel out; try again until lights are on.
+    do {
+        lights_.fill(false);
+        std::array<bool, kCells> tapped{};
+        for (int done = 0; done < taps;) {
+            const int cell = static_cast<int>(random() % kCells);
+            if (tapped[cell])
+                continue;
+            tapped[cell] = true;
+            Flip(cell);
+            ++done;
+        }
+    } while (IsSolved());
+}
+
+bool LightsOut::Press(int cell) {
+    if (cell < 0 || cell >= kCells || IsSolved())
+        return false;
+    Flip(cell);
+    ++moves_;
+    return true;
+}
+
+bool LightsOut::IsSolved() const {
+    return std::none_of(lights_.begin(), lights_.end(), [](bool on) { return on; });
+}
+
+// ── Number Merge ──────────────────────────────────────────────────────────
+
+void MergeGame::Reset(const Random& random) {
+    tiles_.fill(0);
+    score_ = 0;
+    AddTile(random);
+    AddTile(random);
+}
+
+void MergeGame::AddTile(const Random& random) {
+    int empty = 0;
+    for (int value : tiles_)
+        empty += value == 0;
+    if (empty == 0)
+        return;
+    int pick = static_cast<int>(random() % empty);
+    const int value = random() % 10 == 0 ? 4 : 2;
+    for (int& tile : tiles_) {
+        if (tile == 0 && pick-- == 0) {
+            tile = value;
+            return;
+        }
+    }
+}
+
+bool MergeGame::Move(Direction direction, const Random& random) {
+    bool moved = false;
+    for (int line = 0; line < kSize; ++line) {
+        // The cells of this row or column, starting from the side tiles move to.
+        int cells[kSize];
+        for (int i = 0; i < kSize; ++i) {
+            switch (direction) {
+                case Direction::kLeft:
+                    cells[i] = line * kSize + i;
+                    break;
+                case Direction::kRight:
+                    cells[i] = line * kSize + (kSize - 1 - i);
+                    break;
+                case Direction::kUp:
+                    cells[i] = i * kSize + line;
+                    break;
+                case Direction::kDown:
+                    cells[i] = (kSize - 1 - i) * kSize + line;
+                    break;
+            }
+        }
+        int values[kSize] = {};
+        int count = 0;
+        bool can_merge = false;  // A tile merges once per move
+        for (int i = 0; i < kSize; ++i) {
+            const int value = tiles_[cells[i]];
+            if (value == 0)
+                continue;
+            if (can_merge && values[count - 1] == value) {
+                values[count - 1] *= 2;
+                score_ += values[count - 1];
+                can_merge = false;
+            } else {
+                values[count++] = value;
+                can_merge = true;
+            }
+        }
+        for (int i = 0; i < kSize; ++i) {
+            if (tiles_[cells[i]] != values[i])
+                moved = true;
+            tiles_[cells[i]] = values[i];
+        }
+    }
+    if (moved)
+        AddTile(random);
+    return moved;
+}
+
+int MergeGame::Largest() const { return *std::max_element(tiles_.begin(), tiles_.end()); }
+
+bool MergeGame::CanMove() const {
+    for (int cell = 0; cell < kCells; ++cell) {
+        if (tiles_[cell] == 0)
+            return true;
+        const int col = cell % kSize;
+        if (col < kSize - 1 && tiles_[cell] == tiles_[cell + 1])
+            return true;
+        if (cell + kSize < kCells && tiles_[cell] == tiles_[cell + kSize])
+            return true;
+    }
+    return false;
+}
+
+// ── How Many? ─────────────────────────────────────────────────────────────
+
+void CountGame::Start(const Random& random) {
+    question_ = 0;
+    score_ = 0;
+    Ask(random);
+}
+
+void CountGame::Ask(const Random& random) {
+    const int max = question_ < kQuestions / 2 ? 5 : kMaxCount;
+    int count = 1 + static_cast<int>(random() % max);
+    if (count == count_)
+        count = count % max + 1;  // Not the same twice in a row
+    count_ = count;
+    kind_ = static_cast<int>(random() % kKinds);
+
+    // Distinct slots: shuffle them all and take the first few.
+    std::array<int, kSlots> all{};
+    for (int i = 0; i < kSlots; ++i)
+        all[i] = i;
+    for (int i = kSlots - 1; i > 0; --i)
+        std::swap(all[i], all[random() % (i + 1)]);
+    std::copy(all.begin(), all.begin() + count_, slots_.begin());
+    std::sort(slots_.begin(), slots_.begin() + count_);
+
+    // The answer and two near misses, in a random order.
+    std::array<int, kChoices> choices{count_, 0, 0};
+    for (int i = 1; i < kChoices; ++i) {
+        int candidate;
+        do {
+            const int offset = 1 + static_cast<int>(random() % 2);
+            candidate = random() % 2 ? count_ + offset : count_ - offset;
+        } while (candidate < 1 || candidate > kMaxCount + 2 ||
+                 std::find(choices.begin(), choices.begin() + i, candidate) != choices.begin() + i);
+        choices[i] = candidate;
+    }
+    for (int i = kChoices - 1; i > 0; --i)
+        std::swap(choices[i], choices[random() % (i + 1)]);
+    choices_ = choices;
+    answered_ = false;
+    missed_ = false;
+}
+
+CountGame::Result CountGame::Answer(int choice) {
+    if (choice < 0 || choice >= kChoices || answered_ || IsOver())
+        return Result::kIgnored;
+    if (choices_[choice] != count_) {
+        missed_ = true;
+        return Result::kWrong;
+    }
+    answered_ = true;
+    if (!missed_)
+        ++score_;
+    return Result::kRight;
+}
+
+bool CountGame::Next(const Random& random) {
+    if (!answered_ || IsOver())
+        return false;
+    ++question_;
+    if (IsOver())
+        return false;
+    Ask(random);
+    return true;
+}
+
+// ── Balloon Pop ───────────────────────────────────────────────────────────
+
+void BalloonGame::Reset() {
+    balloons_ = {};
+    score_ = 0;
+    lives_ = kStartLives;
+    next_spawn_ms_ = 300;
+}
+
+int BalloonGame::Speed() const { return std::min(45 + score_ * 3, 160); }
+
+void BalloonGame::Spawn(const Random& random) {
+    for (auto& balloon : balloons_) {
+        if (balloon.active)
+            continue;
+        balloon.active = true;
+        balloon.x = static_cast<int>(random() % (kWidth - kSize));
+        balloon.y_milli = kHeight * 1000;
+        balloon.color = static_cast<int>(random() % kColors);
+        return;
+    }
+}
+
+int BalloonGame::Advance(int ms, const Random& random) {
+    if (IsOver())
+        return 0;
+    int escaped = 0;
+    const int step = Speed() * ms;  // Thousandths of a pixel
+    for (auto& balloon : balloons_) {
+        if (!balloon.active)
+            continue;
+        balloon.y_milli -= step;
+        if (balloon.y_milli < -kSize * 1000) {
+            balloon.active = false;
+            ++escaped;
+        }
+    }
+    lives_ = std::max(lives_ - escaped, 0);
+    next_spawn_ms_ -= ms;
+    if (next_spawn_ms_ <= 0 && !IsOver()) {
+        Spawn(random);
+        const int interval = std::max(1200 - score_ * 25, 450);
+        next_spawn_ms_ = interval + static_cast<int>(random() % 300);
+    }
+    return escaped;
+}
+
+int BalloonGame::Tap(int x, int y) {
+    if (IsOver())
+        return -1;
+    constexpr int kSlack = 6;  // Small fingers miss by a little
+    for (int i = 0; i < kMaxBalloons; ++i) {
+        auto& balloon = balloons_[i];
+        if (!balloon.active)
+            continue;
+        const int top = balloon.y_milli / 1000;
+        if (x >= balloon.x - kSlack && x < balloon.x + kSize + kSlack && y >= top - kSlack &&
+            y < top + kSize + kSlack) {
+            balloon.active = false;
+            ++score_;
+            return i;
+        }
+    }
+    return -1;
+}
+
 }  // namespace games

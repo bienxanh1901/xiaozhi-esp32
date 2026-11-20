@@ -349,4 +349,140 @@ private:
     void NewRound(const Random& random);
 };
 
+// Lights Out: tapping a light flips it and the ones next to it; turn them all
+// off. Each level starts from more random taps away from all-off, so it can
+// always be solved.
+class LightsOut {
+public:
+    static constexpr int kSize = 5;
+    static constexpr int kCells = kSize * kSize;
+
+    // Level 1 and up.
+    void NewPuzzle(int level, const Random& random);
+    // Flips `cell` and its neighbours. False when the puzzle is already solved.
+    bool Press(int cell);
+
+    bool On(int cell) const { return lights_[cell]; }
+    int Level() const { return level_; }
+    int Moves() const { return moves_; }
+    bool IsSolved() const;
+
+private:
+    std::array<bool, kCells> lights_{};
+    int level_ = 1;
+    int moves_ = 0;
+
+    void Flip(int cell);
+};
+
+// Number Merge: slide the tiles; two equal tiles that meet add up. A new 2
+// (sometimes a 4) appears after each move. Over when nothing can move.
+class MergeGame {
+public:
+    static constexpr int kSize = 4;
+    static constexpr int kCells = kSize * kSize;
+    static constexpr int kGoal = 2048;
+    enum class Direction { kLeft, kRight, kUp, kDown };
+
+    void Reset(const Random& random);
+    // False when nothing moved (and no tile was added).
+    bool Move(Direction direction, const Random& random);
+
+    int At(int cell) const { return tiles_[cell]; }  // 0 for empty
+    int Score() const { return score_; }
+    int Largest() const;
+    bool CanMove() const;
+    bool IsOver() const { return !CanMove(); }
+
+    // For tests: sets the board directly.
+    void SetTiles(const std::array<int, kCells>& tiles) { tiles_ = tiles; }
+
+private:
+    std::array<int, kCells> tiles_{};
+    int score_ = 0;
+
+    void AddTile(const Random& random);
+};
+
+// How Many?: count the pictures and pick the number. Up to 5 pictures in the
+// first half, up to 10 after.
+class CountGame {
+public:
+    static constexpr int kQuestions = 10;
+    static constexpr int kChoices = 3;
+    static constexpr int kSlotCols = 6;
+    static constexpr int kSlotRows = 3;
+    static constexpr int kSlots = kSlotCols * kSlotRows;
+    static constexpr int kMaxCount = 10;
+    static constexpr int kKinds = 4;  // Kinds of picture
+    enum class Result { kIgnored, kWrong, kRight };
+
+    void Start(const Random& random);
+    Result Answer(int choice);
+    // Moves on after a right answer. False when the round is over.
+    bool Next(const Random& random);
+
+    int Count() const { return count_; }
+    // Grid slot (row-major, kSlotCols wide) of picture `index` < Count().
+    int Slot(int index) const { return slots_[index]; }
+    int Kind() const { return kind_; }
+    int Choice(int index) const { return choices_[index]; }
+    bool Answered() const { return answered_; }
+    int Question() const { return question_; }
+    int Score() const { return score_; }
+    bool IsOver() const { return question_ >= kQuestions; }
+
+private:
+    int count_ = 0;
+    std::array<int, kMaxCount> slots_{};
+    int kind_ = 0;
+    std::array<int, kChoices> choices_{};
+    bool answered_ = false;
+    bool missed_ = false;
+    int question_ = 0;
+    int score_ = 0;
+
+    void Ask(const Random& random);
+};
+
+// Balloon Pop: balloons float up; tap them before they get away. Three may
+// escape. They rise faster and come more often as the score grows.
+class BalloonGame {
+public:
+    static constexpr int kWidth = 320;
+    static constexpr int kHeight = 180;
+    static constexpr int kSize = 44;  // Balloon width and height
+    static constexpr int kMaxBalloons = 7;
+    static constexpr int kStartLives = 3;
+    static constexpr int kColors = 5;
+
+    struct Balloon {
+        bool active = false;
+        int x = 0;        // Left edge
+        int y_milli = 0;  // Top edge, in thousandths of a pixel
+        int color = 0;
+    };
+
+    void Reset();
+    // Moves the balloons on; returns how many got away.
+    int Advance(int ms, const Random& random);
+    // Pops the balloon under the point, if any. Returns its index, or -1.
+    int Tap(int x, int y);
+
+    const Balloon& At(int index) const { return balloons_[index]; }
+    int Score() const { return score_; }
+    int Lives() const { return lives_; }
+    bool IsOver() const { return lives_ <= 0; }
+    // Pixels per second at the current score.
+    int Speed() const;
+
+private:
+    std::array<Balloon, kMaxBalloons> balloons_{};
+    int next_spawn_ms_ = 0;
+    int score_ = 0;
+    int lives_ = kStartLives;
+
+    void Spawn(const Random& random);
+};
+
 }  // namespace games

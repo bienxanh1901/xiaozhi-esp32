@@ -642,6 +642,186 @@ static void TestOddOne() {
     CHECK(!game.IsOver() && game.Score() == 0);
 }
 
+static void TestLightsOut() {
+    std::mt19937 engine(21);
+    Random random = [&]() { return static_cast<uint32_t>(engine()); };
+    LightsOut game;
+    for (int level = 1; level <= 15; ++level) {
+        game.NewPuzzle(level, random);
+        CHECK(game.Level() == level && game.Moves() == 0 && !game.IsSolved());
+        // Pressing a cell twice puts it back.
+        LightsOut copy = game;
+        CHECK(copy.Press(7) && copy.Press(7));
+        for (int c = 0; c < LightsOut::kCells; ++c)
+            CHECK(copy.On(c) == game.On(c));
+        // Solvable: "chase the lights" down, then try the 2^5 top-row presses.
+        bool solved = false;
+        for (int top = 0; top < 32 && !solved; ++top) {
+            LightsOut trial = game;
+            for (int col = 0; col < LightsOut::kSize; ++col) {
+                if (top & (1 << col))
+                    trial.Press(col);
+            }
+            for (int row = 1; row < LightsOut::kSize; ++row) {
+                for (int col = 0; col < LightsOut::kSize; ++col) {
+                    if (trial.On((row - 1) * LightsOut::kSize + col))
+                        trial.Press(row * LightsOut::kSize + col);
+                }
+            }
+            solved = trial.IsSolved();
+            if (solved)
+                CHECK(!trial.Press(0));  // Nothing to do once solved
+        }
+        CHECK(solved);
+    }
+    CHECK(!game.Press(-1) && !game.Press(LightsOut::kCells));
+    // A middle press flips five lights, a corner three.
+    game.NewPuzzle(1, random);
+    LightsOut before = game;
+    game.Press(12);
+    int flipped = 0;
+    for (int c = 0; c < LightsOut::kCells; ++c)
+        flipped += game.On(c) != before.On(c);
+    CHECK(flipped == 5);
+    before = game;
+    game.Press(0);
+    flipped = 0;
+    for (int c = 0; c < LightsOut::kCells; ++c)
+        flipped += game.On(c) != before.On(c);
+    CHECK(flipped == 3 || game.IsSolved());
+}
+
+static void TestMerge() {
+    using Dir = MergeGame::Direction;
+    // Never a 4 (needs % 10 == 0); new tiles go into the last empty cells.
+    Random twos = [] { return 13u; };
+    MergeGame game;
+    game.Reset(twos);
+    int tiles = 0;
+    for (int c = 0; c < MergeGame::kCells; ++c)
+        tiles += game.At(c) != 0;
+    CHECK(tiles == 2 && game.Score() == 0);
+
+    // 2 2 2 2 -> 4 4 (each tile merges once), score 8, plus one new tile.
+    game.SetTiles({2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0});
+    CHECK(game.Move(Dir::kLeft, twos));
+    CHECK(game.At(0) == 4 && game.At(1) == 4 && game.At(2) == 0 && game.At(3) == 0);
+    CHECK(game.Score() == 8);
+    tiles = 0;
+    for (int c = 0; c < MergeGame::kCells; ++c)
+        tiles += game.At(c) != 0;
+    CHECK(tiles == 3);
+
+    // 4 0 4 8 right -> 0 0 8 8 (the 8 made this move does not merge again).
+    game.SetTiles({4, 0, 4, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0});
+    CHECK(game.Move(Dir::kRight, twos));
+    CHECK(game.At(2) == 8 && game.At(3) == 8);
+
+    // Columns: up and down.
+    game.SetTiles({2, 0, 0, 0, 2, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0});
+    CHECK(game.Move(Dir::kUp, twos));
+    CHECK(game.At(0) == 4 && game.At(4) == 4);
+    game.SetTiles({2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0});
+    CHECK(game.Move(Dir::kDown, twos));
+    CHECK(game.At(12) == 4 && game.At(0) == 0);
+
+    // Nothing moves: no new tile.
+    game.SetTiles({2, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0});
+    CHECK(!game.Move(Dir::kLeft, twos));
+    CHECK(game.At(2) == 0 && game.At(4) == 0);
+
+    // Full board without equal neighbours is over; one pair keeps it going.
+    game.SetTiles({2, 4, 2, 4, 4, 2, 4, 2, 2, 4, 2, 4, 4, 2, 4, 2});
+    CHECK(game.IsOver() && game.Largest() == 4);
+    game.SetTiles({2, 4, 2, 4, 4, 2, 4, 2, 2, 4, 2, 4, 4, 2, 4, 4});
+    CHECK(!game.IsOver());
+
+    // A long random game stays sane.
+    std::mt19937 engine(22);
+    Random random = [&]() { return static_cast<uint32_t>(engine()); };
+    game.Reset(random);
+    int moves = 0;
+    while (!game.IsOver() && moves < 5000) {
+        game.Move(static_cast<Dir>(engine() % 4), random);
+        ++moves;
+    }
+    CHECK(game.IsOver());
+    CHECK(game.Largest() >= 32 && game.Score() > 0);
+}
+
+static void TestCount() {
+    std::mt19937 engine(23);
+    Random random = [&]() { return static_cast<uint32_t>(engine()); };
+    CountGame game;
+    game.Start(random);
+    int last = 0;
+    for (int q = 0; q < CountGame::kQuestions; ++q) {
+        CHECK(game.Question() == q);
+        const int max = q < CountGame::kQuestions / 2 ? 5 : CountGame::kMaxCount;
+        CHECK(game.Count() >= 1 && game.Count() <= max);
+        CHECK(game.Count() != last);
+        last = game.Count();
+        CHECK(game.Kind() >= 0 && game.Kind() < CountGame::kKinds);
+        std::set<int> slots;
+        for (int i = 0; i < game.Count(); ++i) {
+            CHECK(game.Slot(i) >= 0 && game.Slot(i) < CountGame::kSlots);
+            slots.insert(game.Slot(i));
+        }
+        CHECK(static_cast<int>(slots.size()) == game.Count());
+        std::set<int> choices;
+        int right = -1;
+        for (int i = 0; i < CountGame::kChoices; ++i) {
+            CHECK(game.Choice(i) >= 1);
+            choices.insert(game.Choice(i));
+            if (game.Choice(i) == game.Count())
+                right = i;
+        }
+        CHECK(choices.size() == CountGame::kChoices && right >= 0);
+        if (q % 2 == 1)
+            CHECK(game.Answer((right + 1) % CountGame::kChoices) == CountGame::Result::kWrong);
+        CHECK(game.Answer(right) == CountGame::Result::kRight);
+        CHECK(game.Answer(right) == CountGame::Result::kIgnored);
+        CHECK(game.Next(random) == (q < CountGame::kQuestions - 1));
+    }
+    CHECK(game.IsOver() && game.Score() == CountGame::kQuestions / 2);
+}
+
+static void TestBalloon() {
+    std::mt19937 engine(24);
+    Random random = [&]() { return static_cast<uint32_t>(engine()); };
+    BalloonGame game;
+    game.Reset();
+    CHECK(game.Lives() == BalloonGame::kStartLives && game.Score() == 0);
+    CHECK(game.Tap(100, 100) == -1);
+
+    // Pop every balloon as soon as it is fully in view: nothing escapes.
+    int escaped = 0;
+    for (int t = 0; t < 60000; t += 40) {
+        escaped += game.Advance(40, random);
+        for (int i = 0; i < BalloonGame::kMaxBalloons; ++i) {
+            const auto& b = game.At(i);
+            if (b.active && b.y_milli / 1000 < BalloonGame::kHeight - BalloonGame::kSize) {
+                CHECK(game.Tap(b.x + BalloonGame::kSize / 2,
+                               b.y_milli / 1000 + BalloonGame::kSize / 2) == i);
+            }
+        }
+    }
+    CHECK(escaped == 0 && game.Lives() == BalloonGame::kStartLives);
+    CHECK(game.Score() > 40);
+    CHECK(game.Speed() > 45 && game.Speed() <= 160);
+
+    // Ignore them all: three escape and the game ends.
+    game.Reset();
+    int ms = 0;
+    while (!game.IsOver() && ms < 120000) {
+        game.Advance(40, random);
+        ms += 40;
+    }
+    CHECK(game.IsOver() && game.Lives() == 0 && game.Score() == 0);
+    CHECK(game.Advance(40, random) == 0);
+    CHECK(game.Tap(0, 0) == -1);
+}
+
 int main() {
     TestTicTacToe();
     TestMemory();
@@ -654,6 +834,10 @@ int main() {
     TestCatch();
     TestHop();
     TestOddOne();
+    TestLightsOut();
+    TestMerge();
+    TestCount();
+    TestBalloon();
     if (failures == 0) printf("OK\n");
     return failures == 0 ? 0 : 1;
 }
