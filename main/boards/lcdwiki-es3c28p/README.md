@@ -90,11 +90,11 @@ the same one the chatbot changes by voice. The apps are (`main/apps/launcher.*`)
   - *Balloon Pop*: tap the balloons before they float away. Three may escape;
     they rise faster as the score grows, and the best score is kept.
 - **English**: English words for children, with Vietnamese meanings
-  (`main/apps/english_app.*`, words in `english_words.cc`). Twenty-six
+  (`main/apps/english_app.*`, words in `english_words.cc`). Thirty
   topics in a menu that scrolls: colors, numbers, things, animals, fruits, the
   body, food, vegetables, vehicles, nature, clothes, family, school, toys, jobs,
   feelings, the home, sports, sea animals, insects, weather, shapes, actions,
-  musical instruments, birds and places. A
+  musical instruments, birds, places, summer, winter, the zoo and space. A
   tile shows its topic's first picture. Each topic shows word
   cards (a color swatch, a digit or a picture, the English word and its
   meaning) and says the word; tap the picture to hear it again, and the arrows

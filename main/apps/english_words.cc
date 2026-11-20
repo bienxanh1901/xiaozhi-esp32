@@ -198,6 +198,39 @@ constexpr Word kPlaces[] = {
     {"castle", "lâu đài"},    {"mountain", "núi"},
 };
 
+constexpr Word kSummer[] = {
+    {"sun", "mặt trời"},    {"hot", "nóng"},           {"sea", "biển"},
+    {"beach", "bãi biển"},  {"swimming", "bơi lội"},   {"ice cream", "kem"},
+    {"juice", "nước ép"},   {"watermelon", "dưa hấu"}, {"crab", "con cua"},
+    {"boat", "con thuyền"}, {"umbrella", "cái ô"},
+};
+
+constexpr Word kWinter[] = {
+    {"snow", "tuyết"},         {"snowman", "người tuyết"},   {"cold", "lạnh"},
+    {"coat", "áo khoác"},      {"scarf", "khăn quàng"},      {"gloves", "găng tay"},
+    {"hat", "cái mũ"},         {"boots", "đôi ủng"},         {"socks", "đôi tất"},
+    {"skating", "trượt băng"}, {"penguin", "chim cánh cụt"},
+};
+
+constexpr Word kZoo[] = {
+    {"lion", "sư tử"},          {"tiger", "con hổ"},       {"elephant", "con voi"},
+    {"giraffe", "hươu cao cổ"}, {"zebra", "ngựa vằn"},     {"monkey", "con khỉ"},
+    {"panda", "gấu trúc"},      {"kangaroo", "chuột túi"}, {"crocodile", "cá sấu"},
+    {"snake", "con rắn"},       {"bear", "con gấu"},
+};
+
+constexpr Word kSpace[] = {
+    {"sun", "mặt trời"},
+    {"moon", "mặt trăng"},
+    {"star", "ngôi sao"},
+    {"earth", "trái đất"},
+    {"planet", "hành tinh"},
+    {"rocket", "tên lửa"},
+    {"astronaut", "phi hành gia"},
+    {"alien", "người ngoài hành tinh"},
+    {"telescope", "kính thiên văn"},
+};
+
 constexpr Topic kTopics[] = {
     {"Màu sắc", MATERIAL_SYMBOLS_BRIGHTNESS_6, 0xC62828, Picture::kColor, kColors,
      static_cast<int>(std::size(kColors))},
@@ -251,6 +284,14 @@ constexpr Topic kTopics[] = {
      static_cast<int>(std::size(kBirds))},
     {"Địa điểm", MATERIAL_SYMBOLS_LOCATION_ON, 0x455A64, Picture::kImage, kPlaces,
      static_cast<int>(std::size(kPlaces))},
+    {"Mùa hè", MATERIAL_SYMBOLS_BRIGHTNESS_6, 0xF9A825, Picture::kImage, kSummer,
+     static_cast<int>(std::size(kSummer))},
+    {"Mùa đông", MATERIAL_SYMBOLS_DEVICE_THERMOSTAT, 0x1976D2, Picture::kImage, kWinter,
+     static_cast<int>(std::size(kWinter))},
+    {"Sở thú", MATERIAL_SYMBOLS_FAVORITE, 0x6D4C41, Picture::kImage, kZoo,
+     static_cast<int>(std::size(kZoo))},
+    {"Vũ trụ", MATERIAL_SYMBOLS_EXPLORE, 0x283593, Picture::kImage, kSpace,
+     static_cast<int>(std::size(kSpace))},
 };
 
 }  // namespace

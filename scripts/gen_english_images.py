@@ -129,6 +129,13 @@ EMOJI = {
     # Places
     "hospital": "1f3e5", "shop": "1f3ea", "park": "1f3de", "beach": "1f3d6",
     "castle": "1f3f0",
+    # Winter
+    "snowman": "26c4",
+    # Zoo
+    "lion": "1f981", "giraffe": "1f992", "zebra": "1f993", "panda": "1f43c",
+    "kangaroo": "1f998", "crocodile": "1f40a", "snake": "1f40d",
+    # Space
+    "earth": "1f30f", "planet": "1fa90", "alien": "1f47d", "telescope": "1f52d",
 }
 
 
