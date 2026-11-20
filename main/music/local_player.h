@@ -32,9 +32,19 @@ public:
     LocalMusicPlayer(const LocalMusicPlayer&) = delete;
     LocalMusicPlayer& operator=(const LocalMusicPlayer&) = delete;
 
-    // Finds playable files under `directory` (a few levels deep), sorted by
-    // path. Stops playback. Returns the number of tracks found.
-    size_t Scan(const std::string& directory);
+    struct Folder {
+        std::string path;    // Full path, for Scan()
+        size_t track_count;  // Playable files directly inside it
+    };
+
+    // Folders under `root` (a few levels deep, `root` included) that directly
+    // hold playable files, sorted by path. Does not touch the track list.
+    std::vector<Folder> ListFolders(const std::string& root) const;
+
+    // Makes the playable files in `directory` the track list, sorted by path:
+    // with `recursive`, also those in its subfolders (a few levels deep).
+    // Stops playback. Returns the number of tracks found.
+    size_t Scan(const std::string& directory, bool recursive = true);
 
     size_t TrackCount() const;
     // Display name of a track: its file name without the extension.
@@ -73,7 +83,7 @@ private:
     uint32_t revision_ = 0;
     TaskHandle_t task_ = nullptr;
 
-    void ScanDirectory(const std::string& directory, int depth);
+    void ScanDirectory(const std::string& directory, int depth, bool recursive);
     void RequestLocked(int index);
     void BumpLocked() { ++revision_; }
     void Run();

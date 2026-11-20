@@ -118,6 +118,49 @@ constexpr Word kToys[] = {
     {"guitar", "đàn ghi ta"}, {"puzzle", "trò xếp hình"}, {"doll", "búp bê"},
 };
 
+constexpr Word kJobs[] = {
+    {"doctor", "bác sĩ"},        {"farmer", "nông dân"},      {"cook", "đầu bếp"},
+    {"police", "cảnh sát"},      {"firefighter", "lính cứu hỏa"}, {"pilot", "phi công"},
+    {"singer", "ca sĩ"},         {"artist", "họa sĩ"},        {"astronaut", "phi hành gia"},
+    {"builder", "thợ xây"},
+};
+
+constexpr Word kFeelings[] = {
+    {"happy", "vui vẻ"},      {"sad", "buồn"},          {"angry", "tức giận"},
+    {"scared", "sợ hãi"},     {"tired", "mệt mỏi"},     {"sleepy", "buồn ngủ"},
+    {"surprised", "ngạc nhiên"}, {"sick", "bị ốm"},     {"cold", "lạnh"},
+    {"hot", "nóng"},          {"love", "yêu thương"},   {"silly", "tinh nghịch"},
+};
+
+constexpr Word kHome[] = {
+    {"bed", "cái giường"},    {"chair", "cái ghế"},     {"door", "cửa ra vào"},
+    {"window", "cửa sổ"},     {"light bulb", "bóng đèn"}, {"toilet", "bồn cầu"},
+    {"bathtub", "bồn tắm"},   {"sofa", "ghế sô pha"},   {"mirror", "cái gương"},
+    {"clock", "đồng hồ"},     {"television", "ti vi"},  {"broom", "cái chổi"},
+    {"soap", "xà phòng"},     {"toothbrush", "bàn chải đánh răng"},
+};
+
+constexpr Word kSports[] = {
+    {"soccer", "bóng đá"},       {"basketball", "bóng rổ"},  {"tennis", "quần vợt"},
+    {"swimming", "bơi lội"},     {"running", "chạy bộ"},     {"badminton", "cầu lông"},
+    {"volleyball", "bóng chuyền"}, {"baseball", "bóng chày"}, {"cycling", "đạp xe"},
+    {"skating", "trượt băng"},   {"boxing", "đấm bốc"},      {"golf", "đánh gôn"},
+};
+
+constexpr Word kSea[] = {
+    {"whale", "cá voi"},     {"dolphin", "cá heo"},   {"shark", "cá mập"},
+    {"octopus", "bạch tuộc"}, {"crab", "con cua"},    {"turtle", "con rùa"},
+    {"jellyfish", "con sứa"}, {"shrimp", "con tôm"},  {"seal", "hải cẩu"},
+    {"penguin", "chim cánh cụt"},
+};
+
+constexpr Word kInsects[] = {
+    {"butterfly", "con bướm"}, {"bee", "con ong"},       {"ant", "con kiến"},
+    {"ladybug", "bọ rùa"},     {"spider", "con nhện"},   {"snail", "ốc sên"},
+    {"worm", "con giun"},      {"mosquito", "con muỗi"}, {"fly", "con ruồi"},
+    {"beetle", "bọ cánh cứng"}, {"caterpillar", "sâu bướm"},
+};
+
 constexpr Topic kTopics[] = {
     {"Màu sắc", MATERIAL_SYMBOLS_BRIGHTNESS_6, 0xC62828, Picture::kColor, kColors,
      static_cast<int>(std::size(kColors))},
@@ -147,6 +190,18 @@ constexpr Topic kTopics[] = {
      static_cast<int>(std::size(kSchool))},
     {"Đồ chơi", MATERIAL_SYMBOLS_SPORTS_ESPORTS, 0x00695C, Picture::kImage, kToys,
      static_cast<int>(std::size(kToys))},
+    {"Nghề nghiệp", MATERIAL_SYMBOLS_PERSON, 0x37474F, Picture::kImage, kJobs,
+     static_cast<int>(std::size(kJobs))},
+    {"Cảm xúc", MATERIAL_SYMBOLS_FAVORITE, 0xC2185B, Picture::kImage, kFeelings,
+     static_cast<int>(std::size(kFeelings))},
+    {"Trong nhà", MATERIAL_SYMBOLS_HOME, 0x8D6E63, Picture::kImage, kHome,
+     static_cast<int>(std::size(kHome))},
+    {"Thể thao", MATERIAL_SYMBOLS_SPORTS_ESPORTS, 0x2E7D32, Picture::kImage, kSports,
+     static_cast<int>(std::size(kSports))},
+    {"Biển cả", MATERIAL_SYMBOLS_EXPLORE, 0x01579B, Picture::kImage, kSea,
+     static_cast<int>(std::size(kSea))},
+    {"Côn trùng", MATERIAL_SYMBOLS_STAR, 0x9E9D24, Picture::kImage, kInsects,
+     static_cast<int>(std::size(kInsects))},
 };
 
 }  // namespace

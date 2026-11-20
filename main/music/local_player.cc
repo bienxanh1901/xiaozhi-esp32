@@ -125,7 +125,51 @@ LocalMusicPlayer::~LocalMusicPlayer() {
     cv_.wait(lock, [this]() { return task_ == nullptr; });
 }
 
-void LocalMusicPlayer::ScanDirectory(const std::string& directory, int depth) {
+namespace {
+
+// Adds `directory` and its subfolders that directly hold playable files.
+void FindFolders(const std::string& directory, int depth, int max_depth,
+                 std::vector<LocalMusicPlayer::Folder>& folders) {
+    DIR* dir = opendir(directory.c_str());
+    if (dir == nullptr) {
+        return;
+    }
+    size_t tracks = 0;
+    std::vector<std::string> subfolders;
+    while (struct dirent* entry = readdir(dir)) {
+        if (entry->d_name[0] == '.') {
+            continue;
+        }
+        std::string path = directory + "/" + entry->d_name;
+        if (entry->d_type == DT_DIR) {
+            subfolders.push_back(std::move(path));
+        } else if (DecoderFor(path) != ESP_AUDIO_SIMPLE_DEC_TYPE_NONE) {
+            ++tracks;
+        }
+    }
+    closedir(dir);
+    if (tracks > 0) {
+        folders.push_back({directory, tracks});
+    }
+    if (depth < max_depth) {
+        for (const auto& path : subfolders) {
+            FindFolders(path, depth + 1, max_depth, folders);
+        }
+    }
+}
+
+}  // namespace
+
+std::vector<LocalMusicPlayer::Folder> LocalMusicPlayer::ListFolders(const std::string& root) const {
+    std::vector<Folder> folders;
+    FindFolders(root, 0, kMaxScanDepth, folders);
+    std::sort(folders.begin(), folders.end(), [](const Folder& a, const Folder& b) {
+        return Lowercase(a.path) < Lowercase(b.path);
+    });
+    return folders;
+}
+
+void LocalMusicPlayer::ScanDirectory(const std::string& directory, int depth, bool recursive) {
     DIR* dir = opendir(directory.c_str());
     if (dir == nullptr) {
         return;
@@ -136,8 +180,8 @@ void LocalMusicPlayer::ScanDirectory(const std::string& directory, int depth) {
         }
         std::string path = directory + "/" + entry->d_name;
         if (entry->d_type == DT_DIR) {
-            if (depth < kMaxScanDepth) {
-                ScanDirectory(path, depth + 1);
+            if (recursive && depth < kMaxScanDepth) {
+                ScanDirectory(path, depth + 1, recursive);
             }
         } else if (DecoderFor(path) != ESP_AUDIO_SIMPLE_DEC_TYPE_NONE) {
             paths_.push_back(std::move(path));
@@ -149,12 +193,12 @@ void LocalMusicPlayer::ScanDirectory(const std::string& directory, int depth) {
     closedir(dir);
 }
 
-size_t LocalMusicPlayer::Scan(const std::string& directory) {
+size_t LocalMusicPlayer::Scan(const std::string& directory, bool recursive) {
     Stop();
     std::lock_guard<std::mutex> lock(mutex_);
     paths_.clear();
     current_ = -1;
-    ScanDirectory(directory, 0);
+    ScanDirectory(directory, 0, recursive);
     std::sort(paths_.begin(), paths_.end(),
               [](const std::string& a, const std::string& b) { return Lowercase(a) < Lowercase(b); });
     BumpLocked();

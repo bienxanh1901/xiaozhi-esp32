@@ -91,6 +91,8 @@ private:
     lv_obj_t* battery_icon_ = nullptr;
     lv_obj_t* battery_text_ = nullptr;
     esp_timer_handle_t battery_timer_ = nullptr;
+    int logged_level_ = -1;
+    bool logged_charging_ = false;
 
     // The status bar's battery icon sits under the full-screen eye face, so
     // show the level in the top-right corner, above the face.
@@ -132,6 +134,12 @@ private:
         if (!GetBatteryLevel(level, charging, discharging)) return;
         if (level < 0) level = 0;
         if (level > 100) level = 100;
+        // Logged on change, so charging can be checked over USB.
+        if (level != logged_level_ || charging != logged_charging_) {
+            logged_level_ = level;
+            logged_charging_ = charging;
+            ESP_LOGI(TAG, "Battery %d%%%s", level, charging ? ", charging" : "");
+        }
 
         static const char* const kLevels[] = {
             MATERIAL_SYMBOLS_BATTERY_ANDROID_0,       MATERIAL_SYMBOLS_BATTERY_ANDROID_FRAME_1,

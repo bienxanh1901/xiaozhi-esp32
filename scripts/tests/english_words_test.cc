@@ -22,7 +22,7 @@ static std::mt19937 engine(7);
 static uint32_t TestRandom() { return static_cast<uint32_t>(engine()); }
 
 static void TestTopics() {
-    CHECK(TopicCount() >= 6 && TopicCount() <= 20);  // The menu scrolls
+    CHECK(TopicCount() >= 6 && TopicCount() <= 30);  // The menu scrolls
     for (int t = 0; t < TopicCount(); ++t) {
         const Topic& topic = GetTopic(t);
         CHECK(topic.name != nullptr && topic.icon != nullptr);

@@ -4,6 +4,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <lvgl.h>
 
@@ -11,6 +12,7 @@ class Display;
 class LocalMusicPlayer;
 class LvglFont;
 namespace apps {
+class CalculatorApp;
 class EnglishApp;
 class GamesApp;
 }
@@ -18,8 +20,9 @@ class GamesApp;
 /**
  * At power on a welcome screen shows until startup is done, then the home
  * screen opens (or the chatbot, when activation or WiFi setup needs it).
- * A touch home screen with four apps: the chatbot (the display's existing UI),
- * a music player for files on the SD card, games, and English for children.
+ * A touch home screen with five apps: the chatbot (the display's existing UI),
+ * a music player for files on the SD card, games, English for children and a
+ * calculator.
  *
  * Opt-in for boards with a touch-enabled LVGL display. Create it after the
  * display's SetupUI() has run (e.g. from Application::Schedule), from any task:
@@ -32,7 +35,7 @@ class GamesApp;
  */
 class Launcher {
 public:
-    enum class App { kHome, kChat, kMusic, kGames, kWelcome, kEnglish };
+    enum class App { kHome, kChat, kMusic, kGames, kWelcome, kEnglish, kCalculator };
     using AppChangedCallback = std::function<void(App)>;
 
     // `player` may be null, and `music_dir` empty, when there is no SD card.
@@ -71,9 +74,14 @@ private:
     lv_obj_t* music_screen_ = nullptr;
     std::unique_ptr<apps::GamesApp> games_;
     std::unique_ptr<apps::EnglishApp> english_;
+    std::unique_ptr<apps::CalculatorApp> calculator_;
     lv_obj_t* home_button_ = nullptr;  // On the top layer, over the chatbot UI
 
-    lv_obj_t* track_list_ = nullptr;
+    lv_obj_t* track_list_ = nullptr;         // Folder rows or track rows
+    lv_obj_t* music_button_icon_ = nullptr;  // Home, or back to the folders
+    std::vector<std::string> folders_;       // Folders on the card holding music
+    std::string open_folder_;                // Folder whose tracks the player holds
+    bool showing_folders_ = true;
     lv_obj_t* empty_label_ = nullptr;
     lv_obj_t* title_label_ = nullptr;
     lv_obj_t* volume_label_ = nullptr;
@@ -101,7 +109,12 @@ private:
     void SetVolume(int volume, bool round);
     void BuildMusicScreen();
     void BuildHomeButton();
-    void ReloadTracks();
+    // Lists the folders holding music.
+    void ShowFolders();
+    void OpenFolder(const std::string& folder);
+    void MusicBack();
+    std::string FolderName(const std::string& folder) const;
+    lv_obj_t* AddMusicRow(const std::string& text, std::function<void()> on_click);
     void RefreshPlayer();
     void ChangeVolume(int delta);
     void SyncTextFont();

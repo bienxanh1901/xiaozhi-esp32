@@ -36,7 +36,7 @@ does not. Touch is detected at startup and skipped when absent.
 
 On boards with touch (ES3C28P) the device powers on to a welcome screen
 (a robot face, "hello" and "please wait"). Once startup is done it opens a home
-screen with four apps; when activation or WiFi setup needs the user, the
+screen with five apps; when activation or WiFi setup needs the user, the
 chatbot screen opens instead. The volume button at the top left of the home
 screen shows the speaker volume; tap it for a panel with a slider and
 -/+ buttons (steps of 10, a beep at the new level). The volume is saved, and is
@@ -45,9 +45,12 @@ the same one the chatbot changes by voice. The apps are (`main/apps/launcher.*`)
 - **Chatbot**: the voice assistant with the robot eyes. A home button sits in
   the bottom-left corner. A conversation started from the home screen (wake
   word or BOOT) opens this app automatically.
-- **Music**: plays MP3, M4A/AAC, FLAC and WAV files from the MicroSD card
-  (folders up to three levels deep, sorted by path). Tap a track to play it;
-  the bar below has previous, play/pause, next and volume. BOOT is play/pause
+- **Music**: plays MP3, M4A/AAC, FLAC and WAV files from the MicroSD card.
+  It opens on a list of the folders that hold music (up to three levels deep;
+  songs at the top of the card show as "SD card"). Tap a folder for its songs
+  and a song to play it; previous and next stay in that folder. The back
+  arrow returns to the folders without stopping the song. The bar below has
+  previous, play/pause, next and volume. BOOT is play/pause
   while this app is open. The chatbot is paused here (no wake word) so it
   never talks over the music; leaving the app stops playback and resumes it.
 
@@ -77,9 +80,10 @@ the same one the chatbot changes by voice. The apps are (`main/apps/launcher.*`)
   - *Odd One Out*: tap the tile with a different color. The difference shrinks
     each round, one wrong tap ends the game, and the best score is kept.
 - **English**: English words for children, with Vietnamese meanings
-  (`main/apps/english_app.*`, words in `english_words.cc`). Fourteen
+  (`main/apps/english_app.*`, words in `english_words.cc`). Twenty
   topics in a menu that scrolls: colors, numbers, things, animals, fruits, the
-  body, food, vegetables, vehicles, nature, clothes, family, school and toys. A
+  body, food, vegetables, vehicles, nature, clothes, family, school, toys, jobs,
+  feelings, the home, sports, sea animals and insects. A
   tile shows its topic's first picture. Each topic shows word
   cards (a color swatch, a digit or a picture, the English word and its
   meaning) and says the word; tap the picture to hear it again, and the arrows
@@ -98,6 +102,10 @@ the same one the chatbot changes by voice. The apps are (`main/apps/launcher.*`)
   card falls back to an icon or the word's first letter.
   The chatbot stays on here, so a wake word opens it. English words use the
   built-in Montserrat 28 font (`CONFIG_LV_FONT_MONTSERRAT_28`).
+- **Calculator**: a keypad with + - x : (x and : are worked out before + and
+  -, as at school), decimals, C to clear and a delete key. The line above the
+  sum shows the answer so far; dividing by 0 shows a message. The rules are in
+  `main/apps/calculator.*` with a host test. A wake word opens the chatbot.
 
 The SD card must be FAT32. File names may use Vietnamese and other non-ASCII
 characters (the board enables UTF-8 file names).

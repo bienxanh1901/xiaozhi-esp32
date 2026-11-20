@@ -10,12 +10,13 @@
 #include "application.h"
 #include "assets/lang_config.h"
 #include "board.h"
+#include "calculator_app.h"
 #include "display/display.h"
 #include "display/lvgl_display/lvgl_theme.h"
-#include "material_symbols.h"
-#include "music/local_player.h"
 #include "english_app.h"
 #include "games_app.h"
+#include "material_symbols.h"
+#include "music/local_player.h"
 #include "ui_helpers.h"
 
 #define TAG "Launcher"
@@ -29,6 +30,7 @@ constexpr uint32_t kChatColor = 0x1565C0;
 constexpr uint32_t kMusicColor = 0x6A1B9A;
 constexpr uint32_t kGamesColor = 0x2E7D32;
 constexpr uint32_t kEnglishColor = 0xEF6C00;
+constexpr uint32_t kCalculatorColor = 0x00838F;
 constexpr int kControlBar = 56;
 
 }  // namespace
@@ -54,6 +56,7 @@ Launcher::Launcher(Display* display, LocalMusicPlayer* player, std::string music
                                                     app.ToggleChatState();
                                                 }
                                             });
+    calculator_ = std::make_unique<CalculatorApp>([this]() { Show(App::kHome); });
     BuildHomeButton();
     SyncTextFont();
     lv_timer_create([](lv_timer_t* t) { static_cast<Launcher*>(lv_timer_get_user_data(t))->Tick(); },
@@ -122,13 +125,19 @@ void Launcher::BuildHomeScreen() {
         {MATERIAL_SYMBOLS_MUSIC_NOTE, "Music", kMusicColor, App::kMusic},
         {MATERIAL_SYMBOLS_SPORTS_ESPORTS, "Games", kGamesColor, App::kGames},
         {MATERIAL_SYMBOLS_LANGUAGE, "English", kEnglishColor, App::kEnglish},
+        {MATERIAL_SYMBOLS_CALCULATE, "Calculator", kCalculatorColor, App::kCalculator},
     };
-    // A 2x2 grid under the volume button and the battery status.
-    const int tile_w = 144, tile_h = 88, gap = 8, top = 48;
-    for (int i = 0; i < 4; ++i) {
+    // Rows of three under the volume button and the battery status.
+    constexpr int kTileCount = sizeof(tiles) / sizeof(tiles[0]);
+    constexpr int kPerRow = 3;
+    const int gap = 8, top = 52, tile_h = 88;
+    const int tile_w =
+        (lv_display_get_horizontal_resolution(nullptr) - 24 - (kPerRow - 1) * gap) / kPerRow;
+    for (int i = 0; i < kTileCount; ++i) {
         lv_obj_t* tile = lv_button_create(home_screen_);
         lv_obj_set_size(tile, tile_w, tile_h);
-        lv_obj_set_pos(tile, 12 + (i % 2) * (tile_w + gap), top + (i / 2) * (tile_h + gap));
+        lv_obj_set_pos(tile, 12 + (i % kPerRow) * (tile_w + gap),
+                       top + (i / kPerRow) * (tile_h + gap));
         lv_obj_set_style_pad_all(tile, 0, 0);
         lv_obj_set_style_radius(tile, 18, 0);
         lv_obj_set_style_bg_color(tile, lv_color_hex(tiles[i].color), 0);
@@ -260,7 +269,8 @@ void Launcher::BuildMusicScreen() {
     const int height = lv_display_get_vertical_resolution(nullptr);
 
     // Top bar: home, now playing, volume.
-    lv_obj_t* bar = MakeTopBar(music_screen_, MATERIAL_SYMBOLS_HOME, [this]() { Show(App::kHome); });
+    lv_obj_t* bar = MakeTopBar(music_screen_, MATERIAL_SYMBOLS_HOME, [this]() { MusicBack(); });
+    music_button_icon_ = lv_obj_get_child(lv_obj_get_child(bar, 0), 0);
 
     title_label_ = lv_label_create(bar);
     lv_obj_set_width(title_label_, width - kTopBarTitleLeft - kRightReserve - 56);
@@ -337,6 +347,10 @@ void Launcher::Show(App app) {
     if (current_ == App::kGames && app != App::kGames) {
         games_->OnHide();
     }
+    // A wake word mid-sum keeps the sum for coming back from the chatbot.
+    if (current_ == App::kCalculator && app != App::kCalculator && app != App::kChat) {
+        calculator_->OnHide();
+    }
     // Practising with the chatbot keeps the topic open for coming back.
     if (current_ == App::kEnglish && app != App::kEnglish && app != App::kChat) {
         english_->OnHide();
@@ -345,7 +359,7 @@ void Launcher::Show(App app) {
         Application::GetInstance().SetChatSuspended(owns_speaker(app));
     }
     if (app == App::kMusic && current_ != App::kMusic) {
-        ReloadTracks();
+        ShowFolders();
     }
 
     current_ = app;
@@ -358,6 +372,8 @@ void Launcher::Show(App app) {
     if (app == App::kMusic) screen = music_screen_;
     if (app == App::kGames) screen = games_->screen();
     if (app == App::kEnglish) screen = english_->screen();
+    if (app == App::kCalculator)
+        screen = calculator_->screen();
     lv_screen_load(screen);
     if (app == App::kChat) {
         lv_obj_remove_flag(home_button_, LV_OBJ_FLAG_HIDDEN);
@@ -366,12 +382,14 @@ void Launcher::Show(App app) {
     }
     shown_revision_ = UINT32_MAX;
     RefreshPlayer();
-    ESP_LOGI(TAG, "App: %s", app == App::kWelcome ? "welcome"
-                            : app == App::kHome  ? "home"
-                            : app == App::kMusic ? "music"
-                            : app == App::kGames ? "games"
-                            : app == App::kEnglish ? "english"
-                                                 : "chat");
+    ESP_LOGI(TAG, "App: %s",
+             app == App::kWelcome      ? "welcome"
+             : app == App::kHome       ? "home"
+             : app == App::kMusic      ? "music"
+             : app == App::kGames      ? "games"
+             : app == App::kEnglish    ? "english"
+             : app == App::kCalculator ? "calculator"
+                                       : "chat");
     if (on_app_changed_) on_app_changed_(app);
 }
 
@@ -386,38 +404,98 @@ bool Launcher::HandleBootButton() {
     return true;
 }
 
-void Launcher::ReloadTracks() {
-    lv_obj_clean(track_list_);
-    size_t count = 0;
-    if (player_ != nullptr && !music_dir_.empty()) {
-        count = player_->Scan(music_dir_);
+lv_obj_t* Launcher::AddMusicRow(const std::string& text, std::function<void()> on_click) {
+    lv_obj_t* item = lv_button_create(track_list_);
+    lv_obj_set_width(item, lv_pct(100));
+    lv_obj_set_height(item, LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_ver(item, 8, 0);
+    lv_obj_set_style_pad_hor(item, 10, 0);
+    lv_obj_set_style_radius(item, 8, 0);
+    lv_obj_set_style_shadow_width(item, 0, 0);
+    lv_obj_set_style_bg_color(item, lv_color_hex(kBackground), 0);
+    lv_obj_set_style_bg_color(item, lv_color_hex(kAccent), LV_STATE_CHECKED);
+    lv_obj_set_style_text_color(item, lv_color_white(), 0);
+    lv_obj_set_style_border_width(item, 0, 0);
+    lv_obj_t* name = lv_label_create(item);
+    lv_obj_set_width(name, lv_pct(100));
+    lv_label_set_long_mode(name, LV_LABEL_LONG_MODE_DOTS);
+    lv_label_set_text(name, text.c_str());
+    BindClick(item, std::move(on_click));
+    return item;
+}
+
+std::string Launcher::FolderName(const std::string& folder) const {
+    if (folder == music_dir_)
+        return "SD card";
+    if (folder.compare(0, music_dir_.size() + 1, music_dir_ + "/") == 0) {
+        return folder.substr(music_dir_.size() + 1);
     }
-    for (size_t i = 0; i < count; ++i) {
-        lv_obj_t* item = lv_button_create(track_list_);
-        lv_obj_set_width(item, lv_pct(100));
-        lv_obj_set_height(item, LV_SIZE_CONTENT);
-        lv_obj_set_style_pad_ver(item, 8, 0);
-        lv_obj_set_style_pad_hor(item, 10, 0);
-        lv_obj_set_style_radius(item, 8, 0);
-        lv_obj_set_style_shadow_width(item, 0, 0);
-        lv_obj_set_style_bg_color(item, lv_color_hex(kBackground), 0);
-        lv_obj_t* name = lv_label_create(item);
-        lv_obj_set_width(name, lv_pct(100));
-        lv_label_set_text(name, player_->TrackName(i).c_str());
-        lv_obj_set_style_bg_color(item, lv_color_hex(kAccent), LV_STATE_CHECKED);
-        lv_obj_set_style_text_color(item, lv_color_white(), 0);
-        lv_obj_set_style_border_width(item, 0, 0);
-        lv_label_set_long_mode(name, LV_LABEL_LONG_MODE_DOTS);
-        BindClick(item, [this, i]() {
-            if (player_) player_->Play(i);
-        });
+    return folder;
+}
+
+void Launcher::ShowFolders() {
+    folders_.clear();
+    if (player_ != nullptr && !music_dir_.empty()) {
+        for (const auto& folder : player_->ListFolders(music_dir_)) {
+            folders_.push_back(folder.path);
+        }
     }
 
-    if (count == 0) {
-        lv_label_set_text(empty_label_, music_dir_.empty() ? "No SD card" : "No music on the SD card\n(MP3, M4A, AAC, FLAC, WAV)");
+    showing_folders_ = true;
+    lv_label_set_text(music_button_icon_, MATERIAL_SYMBOLS_HOME);
+    lv_obj_clean(track_list_);
+    for (const auto& folder : folders_) {
+        AddMusicRow(FolderName(folder), [this, folder]() { OpenFolder(folder); });
+    }
+    lv_obj_scroll_to_y(track_list_, 0, LV_ANIM_OFF);
+
+    if (folders_.empty()) {
+        lv_label_set_text(empty_label_,
+                          music_dir_.empty()
+                              ? "No SD card"
+                              : "No music on the SD card\n(MP3, M4A, AAC, FLAC, WAV)");
         lv_obj_remove_flag(empty_label_, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(empty_label_, LV_OBJ_FLAG_HIDDEN);
+    }
+    shown_revision_ = UINT32_MAX;
+    RefreshPlayer();
+}
+
+void Launcher::OpenFolder(const std::string& folder) {
+    if (player_ == nullptr)
+        return;
+    // Coming back to the folder that is playing keeps it playing.
+    if (folder != open_folder_ || player_->TrackCount() == 0) {
+        player_->Scan(folder, false);  // Stops the music from another folder
+        open_folder_ = folder;
+    }
+    showing_folders_ = false;
+    lv_label_set_text(music_button_icon_, MATERIAL_SYMBOLS_ARROW_BACK);
+    lv_obj_clean(track_list_);
+    const size_t count = player_->TrackCount();
+    for (size_t i = 0; i < count; ++i) {
+        AddMusicRow(player_->TrackName(i), [this, i]() {
+            if (player_)
+                player_->Play(i);
+        });
+    }
+    lv_obj_scroll_to_y(track_list_, 0, LV_ANIM_OFF);
+    if (count == 0) {
+        lv_label_set_text(empty_label_, "No music in this folder");
+        lv_obj_remove_flag(empty_label_, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(empty_label_, LV_OBJ_FLAG_HIDDEN);
+    }
+    shown_revision_ = UINT32_MAX;
+    RefreshPlayer();
+}
+
+void Launcher::MusicBack() {
+    if (!showing_folders_) {
+        ShowFolders();  // The song keeps playing while another folder is picked
+    } else {
+        Show(App::kHome);
     }
 }
 
@@ -452,15 +530,20 @@ void Launcher::RefreshPlayer() {
     int current = player_->CurrentIndex();
     lv_label_set_text(play_icon_, state == LocalMusicPlayer::State::kPlaying ? MATERIAL_SYMBOLS_PAUSE
                                                                              : MATERIAL_SYMBOLS_PLAY_ARROW);
-    std::string title = current >= 0 && state != LocalMusicPlayer::State::kStopped
-                            ? player_->TrackName(current)
-                            : "Music";
+    const bool active = current >= 0 && state != LocalMusicPlayer::State::kStopped;
+    std::string title = active             ? player_->TrackName(current)
+                        : showing_folders_ ? std::string("Music")
+                                           : FolderName(open_folder_);
     lv_label_set_text(title_label_, title.c_str());
 
+    // Highlight the song playing, or in the folder list the folder it is from.
     uint32_t children = lv_obj_get_child_count(track_list_);
     for (uint32_t i = 0; i < children; ++i) {
         lv_obj_t* item = lv_obj_get_child(track_list_, i);
-        if (static_cast<int>(i) == current && state != LocalMusicPlayer::State::kStopped) {
+        const bool playing = showing_folders_
+                                 ? active && i < folders_.size() && folders_[i] == open_folder_
+                                 : active && static_cast<int>(i) == current;
+        if (playing) {
             lv_obj_add_state(item, LV_STATE_CHECKED);
             lv_obj_scroll_to_view(item, LV_ANIM_ON);
         } else {
@@ -476,7 +559,7 @@ void Launcher::SyncTextFont() {
     auto font = theme != nullptr ? theme->text_font() : nullptr;
     if (font == nullptr || font == text_font_) return;
     for (lv_obj_t* screen : {welcome_screen_, home_screen_, music_screen_, games_->screen(),
-                               english_->screen()}) {
+                             english_->screen(), calculator_->screen()}) {
         lv_obj_set_style_text_font(screen, font->font(), 0);
     }
     text_font_ = std::move(font);
@@ -576,7 +659,7 @@ void Launcher::Tick() {
         // The chatbot can change the volume too ("nói to lên").
         UpdateVolumeUi();
     }
-    if (current_ == App::kHome || current_ == App::kEnglish) {
+    if (current_ == App::kHome || current_ == App::kEnglish || current_ == App::kCalculator) {
         // A wake word or BOOT starts a conversation: show it.
         if (chat_started && !end_chat_pending_) {
             Show(App::kChat);

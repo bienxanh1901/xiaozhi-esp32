@@ -83,6 +83,32 @@ EMOJI = {
     # Toys
     "ball": "26bd", "kite": "1fa81", "teddy bear": "1f9f8", "balloon": "1f388",
     "gift": "1f381", "drum": "1f941", "guitar": "1f3b8", "puzzle": "1f9e9", "doll": "1fa86",
+    # Jobs
+    "doctor": "1f9d1_200d_2695", "farmer": "1f9d1_200d_1f33e", "cook": "1f9d1_200d_1f373",
+    "police": "1f46e", "firefighter": "1f9d1_200d_1f692", "pilot": "1f9d1_200d_2708",
+    "singer": "1f9d1_200d_1f3a4", "artist": "1f9d1_200d_1f3a8",
+    "astronaut": "1f9d1_200d_1f680", "builder": "1f477",
+    # Feelings
+    "happy": "1f600", "sad": "1f622", "angry": "1f620", "scared": "1f628", "tired": "1f62b",
+    "sleepy": "1f634", "surprised": "1f62e", "sick": "1f912", "cold": "1f976", "hot": "1f975",
+    "love": "1f970", "silly": "1f61c",
+    # Home
+    "bed": "1f6cf", "chair": "1fa91", "door": "1f6aa", "window": "1fa9f",
+    "light bulb": "1f4a1", "toilet": "1f6bd", "bathtub": "1f6c1", "sofa": "1f6cb",
+    "mirror": "1fa9e", "clock": "1f570", "television": "1f4fa", "broom": "1f9f9",
+    "soap": "1f9fc", "toothbrush": "1faa5",
+    # Sports
+    "soccer": "26bd", "basketball": "1f3c0", "tennis": "1f3be", "swimming": "1f3ca",
+    "running": "1f3c3", "badminton": "1f3f8", "volleyball": "1f3d0", "baseball": "26be",
+    "cycling": "1f6b4", "skating": "26f8", "boxing": "1f94a", "golf": "26f3",
+    # Sea
+    "whale": "1f433", "dolphin": "1f42c", "shark": "1f988", "octopus": "1f419",
+    "crab": "1f980", "turtle": "1f422", "jellyfish": "1fabc", "shrimp": "1f990",
+    "seal": "1f9ad", "penguin": "1f427",
+    # Insects
+    "butterfly": "1f98b", "bee": "1f41d", "ant": "1f41c", "ladybug": "1f41e",
+    "spider": "1f577", "snail": "1f40c", "worm": "1fab1", "mosquito": "1f99f",
+    "fly": "1fab0", "beetle": "1fab2", "caterpillar": "1f41b",
 }
 
 
