@@ -9,7 +9,9 @@ partition, so it costs no RAM. main/CMakeLists.txt packs the files into the
 assets partition with the word clips.
 
 Every word in a Picture::kImage topic of main/apps/english_words.cc needs an
-entry in EMOJI below; the script stops if one is missing.
+entry in EMOJI or DRAWN below; the script stops if one is missing. DRAWN
+pictures are drawn here instead, where the emoji is a poor fit (the triangle
+emoji is small).
 
 Needs network access (to download the emoji) and Pillow.
 
@@ -24,7 +26,7 @@ import sys
 import urllib.request
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parents[1]
 WORDS = ROOT / "main/apps/english_words.cc"
@@ -109,7 +111,40 @@ EMOJI = {
     "butterfly": "1f98b", "bee": "1f41d", "ant": "1f41c", "ladybug": "1f41e",
     "spider": "1f577", "snail": "1f40c", "worm": "1fab1", "mosquito": "1f99f",
     "fly": "1fab0", "beetle": "1fab2", "caterpillar": "1f41b",
+    # Weather
+    "wind": "1f32c", "storm": "26c8", "lightning": "26a1", "fog": "1f32b",
+    "umbrella": "2614",
+    # Shapes
+    "circle": "1f535", "square": "1f7e5", "triangle": "1f53a", "diamond": "1f537",
+    # Actions
+    "eat": "1f60b", "drink": "1f964", "sleep": "1f634", "read": "1f4d6",
+    "write": "270d", "sing": "1f3a4", "dance": "1f483", "laugh": "1f602",
+    "cry": "1f62d", "wave": "1f44b",
+    # Instruments
+    "piano": "1f3b9", "violin": "1f3bb", "trumpet": "1f3ba", "saxophone": "1f3b7",
+    "accordion": "1fa97", "banjo": "1fa95",
+    # Birds
+    "owl": "1f989", "eagle": "1f985", "parrot": "1f99c", "swan": "1f9a2",
+    "flamingo": "1f9a9", "peacock": "1f99a",
+    # Places
+    "hospital": "1f3e5", "shop": "1f3ea", "park": "1f3de", "beach": "1f3d6",
+    "castle": "1f3f0",
 }
+
+
+def draw_triangle():
+    # Drawn large and shrunk, for smooth edges; red like the square.
+    big = SIZE * 4
+    image = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+    margin = big // 16
+    ImageDraw.Draw(image).polygon(
+        [(big // 2, margin), (big - margin, big - margin * 2), (margin, big - margin * 2)],
+        fill=(0xF4, 0x43, 0x36, 255))
+    return image.resize((SIZE, SIZE), Image.LANCZOS)
+
+
+# English word -> function drawing its picture, for words without a good emoji.
+DRAWN = {"triangle": draw_triangle}
 
 
 def image_name(word):
@@ -147,9 +182,9 @@ def main():
     words = image_words()
     if not words:
         sys.exit(f"no Picture::kImage topics found in {WORDS}")
-    missing = [w for w in words if w not in EMOJI]
+    missing = [w for w in words if w not in EMOJI and w not in DRAWN]
     if missing:
-        sys.exit(f"no emoji for: {', '.join(missing)} (add them to EMOJI)")
+        sys.exit(f"no emoji for: {', '.join(missing)} (add them to EMOJI or DRAWN)")
 
     OUT.mkdir(parents=True, exist_ok=True)
     wanted = set()
@@ -160,6 +195,10 @@ def main():
         wanted.add(name)
         target = OUT / name
         if target.exists() and not args.force:
+            continue
+        if word in DRAWN:
+            target.write_bytes(to_rgb565a8(DRAWN[word]()))
+            print(f"{name}: drawn")
             continue
         with urllib.request.urlopen(URL.format(EMOJI[word]), timeout=30) as response:
             png = response.read()

@@ -161,6 +161,43 @@ constexpr Word kInsects[] = {
     {"beetle", "bọ cánh cứng"}, {"caterpillar", "sâu bướm"},
 };
 
+constexpr Word kWeather[] = {
+    {"sun", "mặt trời"},     {"rain", "mưa"},        {"cloud", "mây"},
+    {"snow", "tuyết"},       {"wind", "gió"},        {"storm", "bão"},
+    {"rainbow", "cầu vồng"}, {"lightning", "tia chớp"}, {"fog", "sương mù"},
+    {"umbrella", "cái ô"},
+};
+
+constexpr Word kShapes[] = {
+    {"circle", "hình tròn"},     {"square", "hình vuông"}, {"triangle", "hình tam giác"},
+    {"star", "hình ngôi sao"},  {"heart", "hình trái tim"}, {"diamond", "hình thoi"},
+};
+
+constexpr Word kActions[] = {
+    {"eat", "ăn"},     {"drink", "uống"},   {"sleep", "ngủ"},     {"read", "đọc"},
+    {"write", "viết"}, {"sing", "hát"},     {"dance", "nhảy múa"}, {"laugh", "cười"},
+    {"cry", "khóc"},   {"wave", "vẫy tay"},
+};
+
+constexpr Word kInstruments[] = {
+    {"guitar", "đàn ghi-ta"},   {"piano", "đàn piano"},        {"drum", "cái trống"},
+    {"violin", "đàn vi-ô-lông"}, {"trumpet", "kèn trumpet"},   {"saxophone", "kèn saxophone"},
+    {"accordion", "đàn phong cầm"}, {"banjo", "đàn banjo"},  {"bell", "cái chuông"},
+};
+
+constexpr Word kBirds[] = {
+    {"bird", "con chim"},   {"owl", "con cú"},       {"eagle", "đại bàng"},
+    {"parrot", "con vẹt"},  {"swan", "thiên nga"},   {"flamingo", "hồng hạc"},
+    {"peacock", "con công"}, {"penguin", "chim cánh cụt"}, {"duck", "con vịt"},
+    {"chicken", "con gà"},
+};
+
+constexpr Word kPlaces[] = {
+    {"house", "ngôi nhà"},    {"school", "trường học"}, {"hospital", "bệnh viện"},
+    {"shop", "cửa hàng"},     {"park", "công viên"},    {"beach", "bãi biển"},
+    {"castle", "lâu đài"},    {"mountain", "núi"},
+};
+
 constexpr Topic kTopics[] = {
     {"Màu sắc", MATERIAL_SYMBOLS_BRIGHTNESS_6, 0xC62828, Picture::kColor, kColors,
      static_cast<int>(std::size(kColors))},
@@ -202,6 +239,18 @@ constexpr Topic kTopics[] = {
      static_cast<int>(std::size(kSea))},
     {"Côn trùng", MATERIAL_SYMBOLS_STAR, 0x9E9D24, Picture::kImage, kInsects,
      static_cast<int>(std::size(kInsects))},
+    {"Thời tiết", MATERIAL_SYMBOLS_BRIGHTNESS_6, 0x0288D1, Picture::kImage, kWeather,
+     static_cast<int>(std::size(kWeather))},
+    {"Hình dạng", MATERIAL_SYMBOLS_STAR, 0x5E35B1, Picture::kImage, kShapes,
+     static_cast<int>(std::size(kShapes))},
+    {"Hành động", MATERIAL_SYMBOLS_PERSON, 0xE64A19, Picture::kImage, kActions,
+     static_cast<int>(std::size(kActions))},
+    {"Nhạc cụ", MATERIAL_SYMBOLS_MUSIC_NOTE, 0x8E24AA, Picture::kImage, kInstruments,
+     static_cast<int>(std::size(kInstruments))},
+    {"Các loài chim", MATERIAL_SYMBOLS_FAVORITE, 0x00796B, Picture::kImage, kBirds,
+     static_cast<int>(std::size(kBirds))},
+    {"Địa điểm", MATERIAL_SYMBOLS_LOCATION_ON, 0x455A64, Picture::kImage, kPlaces,
+     static_cast<int>(std::size(kPlaces))},
 };
 
 }  // namespace
